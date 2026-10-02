@@ -58,6 +58,15 @@ commands). Root `CLAUDE.md` section 1 describes the OLD app — superseded, do n
 - Earlier: narrow-screen pass only done for SuperAgent + home; dark-mode of normal mode, keyboard-only,
   real NSE CSV still not verified.
 
+## Decided by the user (3 Oct 2026)
+
+- **No execution of user-uploaded code** (not even sandboxed) for launch. Reason: undetectable malicious
+  code could compromise the server; safe hosting would need throwaway microVMs on separate infra.
+- **SuperAgent = curated, pre-approved agents only** (vetted by us), usable on the site and downloadable
+  as a trade bot. User code may only be *imported* as rules (read, never run).
+- Real TradingAgents v0.5.2 installed in `purple/external/TradingAgents` (own `.venv`, Apache-2.0,
+  ignored by git). Graph builds with Ollama qwen3:8b; no real analysis run yet.
+
 ## Decisions waiting on the user
 
 1. Commit (agent upload + SuperAgent).
