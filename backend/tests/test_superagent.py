@@ -57,7 +57,7 @@ def test_catalog_rule_bots_are_valid():
         st = sa.rule_strategy(bid)
         assert st is not None and st.questions == []
     ids = [a["id"] for a in sa.catalog()]
-    assert ids[0] == "tradingagents" and "crewai-stock-analysis" in ids
+    assert ids[:2] == ["tradingagents-original", "tradingagents"] and "crewai-stock-analysis" in ids
 
 
 def test_rule_bot_runs_on_sample(setup):

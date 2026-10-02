@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError } from '../api'
 import type {
-  BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, StrategySummary, SuperAgentInfo, TeamDecision, TeamResult,
+  BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, SuperAgentInfo, TeamDecision, TeamResult,
 } from '../types'
 import { fmtMoney, fmtPct } from '../lib/tree'
 import { DataPicker, Results } from './Results'
@@ -34,7 +34,7 @@ function useJob<R>(job: Job<R> | null, onFinish?: (j: Job<R>) => void) {
   return state
 }
 
-const KIND_LABEL: Record<SuperAgentInfo['kind'], string> = { 'ai-team': 'AI agent team', rules: 'Rule bot', research: 'Research crew' }
+const KIND_LABEL: Record<SuperAgentInfo['kind'], string> = { 'ta-original': 'Original AI agents', 'ai-team': 'AI agent team (Purple rebuild)', rules: 'Rule bot', research: 'Research crew' }
 
 function AgentCard({ a, selected, onPick }: { a: SuperAgentInfo; selected: boolean; onPick: () => void }) {
   return (
@@ -51,7 +51,7 @@ function AgentCard({ a, selected, onPick }: { a: SuperAgentInfo; selected: boole
   )
 }
 
-function DecisionCards({ decisions, live }: { decisions: Pick<TeamDecision, 'date' | 'action' | 'confidence' | 'reason' | 'bull' | 'bear' | 'report'>[]; live?: boolean }) {
+function DecisionCards({ decisions, live }: { decisions: Pick<TeamDecision, 'date' | 'action' | 'confidence' | 'rating' | 'reason' | 'bull' | 'bear' | 'report'>[]; live?: boolean }) {
   return (
     <ol className="sa-days">
       {decisions.map(d => (
@@ -59,7 +59,7 @@ function DecisionCards({ decisions, live }: { decisions: Pick<TeamDecision, 'dat
           <div className="sa-day-head">
             <span className="sa-date">{d.date}</span>
             <span className={`sa-action ${d.action.toLowerCase()}`}>{d.action}</span>
-            <span className="muted small">{Math.round(d.confidence * 100)}% confidence</span>
+            <span className="muted small">{d.rating ? `rated ${d.rating}` : `${Math.round(d.confidence * 100)}% confidence`}</span>
           </div>
           <p className="sa-reason">{d.reason || '—'}</p>
           <details open={live}>
@@ -109,7 +109,8 @@ function Tiles({ r }: { r: BacktestResult }) {
   )
 }
 
-function PaperPanel({ agent, datasetId, capital, analyses }: { agent: SuperAgentInfo | { id: string; title: string; kind: 'rules' }; datasetId: string | null; capital: number; analyses: string[] }) {
+function PaperPanel({ agent, datasetId, symbol, capital, analyses }: { agent: SuperAgentInfo; datasetId: string | null; symbol: string; capital: number; analyses: string[] }) {
+  const isTA = agent.kind === 'ta-original'
   const [accounts, setAccounts] = useState<PaperAccount[]>([])
   const [view, setView] = useState<PaperView | null>(null)
   const [busy, setBusy] = useState(false)
@@ -142,7 +143,7 @@ function PaperPanel({ agent, datasetId, capital, analyses }: { agent: SuperAgent
     <div className="sa-paper">
       <p className="hint">Paper trading starts <b>today</b> (the last day in your price data) with virtual money. Each new trading day the agent decides on the close and the order fills at the next open — no real orders, no broker.</p>
       <div className="sa-row">
-        <button className="btn sa-go" disabled={busy || !datasetId} onClick={() => act(() => api.saPaperCreate(agent.id, datasetId!, capital, analyses))}>
+        <button className="btn sa-go" disabled={busy || (isTA ? !symbol.trim() : !datasetId)} onClick={() => act(() => api.saPaperCreate(agent.id, isTA ? null : datasetId, capital, analyses, isTA ? symbol : undefined))}>
           Start paper account · {fmtMoney(capital)}
         </button>
         {mine.length > 0 && (
@@ -166,11 +167,14 @@ function PaperPanel({ agent, datasetId, capital, analyses }: { agent: SuperAgent
             </div>
             <div className="sa-today-actions">
               {view.agent.kind === 'ai-team' && view.pending_days.length > 0 && (
-                <button className="btn sa-go" onClick={decide} disabled={running}>Ask the team ({view.pending_days.length} day{view.pending_days.length > 1 ? 's' : ''})</button>
+                <button className="btn sa-go" onClick={decide} disabled={running}>Ask the agent ({view.pending_days.length} day{view.pending_days.length > 1 ? 's' : ''})</button>
               )}
               {view.account.synthetic ? (
                 <button className="btn ghost" disabled={busy || running} onClick={() => act(() => api.saPaperNextDay(view.account.id))}>Next trading day ▶</button>
               ) : null}
+              {view.can_refresh && (
+                <button className="btn ghost" disabled={busy || running} onClick={() => act(() => api.saPaperRefresh(view.account.id))}>Refresh prices ⟳</button>
+              )}
               <button className="link-btn muted" onClick={() => remove(view.account.id)}>Delete account</button>
             </div>
           </div>
@@ -231,43 +235,42 @@ function DeployPanel({ agent }: { agent: { id: string; title: string; kind: stri
   )
 }
 
-export function SuperAgent({ health, initialAgent, onExit, onOpenStrategy }: {
-  health: Health | null; initialAgent?: string; onExit: () => void; onOpenStrategy: (id: string, proposal?: Proposal) => void
+export function SuperAgent({ health, initialAgent, onExit }: {
+  health: Health | null; initialAgent?: string; onExit: () => void
 }) {
   const [agents, setAgents] = useState<SuperAgentInfo[]>([])
-  const [mine, setMine] = useState<StrategySummary[]>([])
   const [agentId, setAgentId] = useState<string | null>(initialAgent ?? null)
   const [step, setStep] = useState<Step>(initialAgent ? 1 : 0)
   const [datasets, setDatasets] = useState<Dataset[]>([])
   const [datasetId, setDatasetId] = useState<string | null>(null)
   const [analyses, setAnalyses] = useState<string[]>(['market'])
   const [days, setDays] = useState(5)
+  const [symbol, setSymbol] = useState('RELIANCE')
   const [capital, setCapital] = useState(100000)
   const [rulesResult, setRulesResult] = useState<BacktestResult | null>(null)
   const [job, setJob] = useState<Job<TeamResult> | null>(null)
   const [teamResult, setTeamResult] = useState<TeamResult | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const uploadRef = useRef<HTMLInputElement>(null)
-  const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
     api.saAgents().then(setAgents).catch(e => setErr(errText(e)))
-    api.listStrategies().then(setMine).catch(() => {})
     api.datasets().then(ds => { setDatasets(ds); setDatasetId(ds[0]?.id ?? null) }).catch(() => {})
   }, [])
 
   const live = useJob(job, j => { if (j.status === 'done' && j.result) setTeamResult(j.result); if (j.status === 'error') setErr(j.error) })
 
-  const agent = useMemo(() => {
-    if (!agentId) return null
-    const a = agents.find(x => x.id === agentId)
-    if (a) return a
-    const s = mine.find(x => `strategy:${x.id}` === agentId)
-    return s ? { id: agentId, kind: 'rules' as const, title: s.name, tagline: 'Your agent', available: true } : null
-  }, [agentId, agents, mine])
-  const isTeam = agent?.kind === 'ai-team'
+  const agent = useMemo(() => agents.find(x => x.id === agentId) ?? null, [agentId, agents])
+  const isTA = agent?.kind === 'ta-original'
+  const isTeam = agent?.kind === 'ai-team' || isTA
+  const maxDays = isTA ? 5 : 30
   const aiReady = Boolean(health?.ai.available)
+
+  useEffect(() => {
+    if (!agent) return
+    setAnalyses(agent.kind === 'ta-original' ? ['market', 'news'] : ['market'])
+    if (agent.kind === 'ta-original') setDays(d => Math.min(d, 2))
+  }, [agent?.id])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const pick = (id: string) => { setAgentId(id); setRulesResult(null); setTeamResult(null); setJob(null); setErr(null); setStep(1) }
 
@@ -276,22 +279,10 @@ export function SuperAgent({ health, initialAgent, onExit, onOpenStrategy }: {
     setBusy(true); setErr(null); setRulesResult(null); setTeamResult(null); setJob(null)
     setStep(2)
     try {
-      const r = await api.saRun(agent.id, datasetId, days, analyses)
+      const r = await api.saRun(agent.id, isTA ? null : datasetId, Math.min(days, maxDays), analyses, isTA ? symbol : undefined)
       if (r.kind === 'rules') setRulesResult(r.result)
       else setJob(r.job)
     } catch (e) { setErr(errText(e)) } finally { setBusy(false) }
-  }
-
-  const upload = async (f?: File) => {
-    if (!f) return
-    setUploading(true); setErr(null)
-    try {
-      const r = await api.importAgent(f)
-      if (r.mode === 'exact') {
-        setMine(await api.listStrategies())
-        pick(`strategy:${r.strategy.id}`)
-      } else onOpenStrategy(r.strategy.id, r.proposal ?? undefined)
-    } catch (e) { setErr(errText(e)) } finally { setUploading(false); if (uploadRef.current) uploadRef.current.value = '' }
   }
 
   const reachable = (s: number) => s === 0 || (agent !== null && (s <= 1 || s === 4 || rulesResult !== null || teamResult !== null || s === 3))
@@ -323,25 +314,11 @@ export function SuperAgent({ health, initialAgent, onExit, onOpenStrategy }: {
       {step === 0 && (
         <section className="sa-panel">
           <h2>Featured agents</h2>
-          <p className="hint">From the TradingAgents project (Tauric Research) recommended for the course: the full analyst team, plus four rule bots built from its indicator guide.</p>
+          <p className="hint">Reviewed and approved agents. From the TradingAgents project (Tauric Research) recommended for the course: the original multi-agent framework, Purple's faster rebuild of it, and four rule bots built from its indicator guide.</p>
           <div className="sa-grid">
             {agents.map(a => <AgentCard key={a.id} a={a} selected={a.id === agentId} onPick={() => pick(a.id)} />)}
-            <div className="sa-card upload">
-              <span className="sa-card-kind">Your coded agent</span>
-              <b>Upload your own bot</b>
-              <span className="sa-card-tag">Python, Pine Script, JS, MQL or a Purple .json. Read and converted into rules, never run.</span>
-              <input ref={uploadRef} type="file" hidden accept=".json,.py,.pine,.txt,.md,.js,.ts,.mq4,.mq5,.mql,.ipynb" onChange={e => upload(e.target.files?.[0])} />
-              <button className="btn sa-go" disabled={uploading} onClick={() => uploadRef.current?.click()}>{uploading ? 'Reading your agent…' : '⇪ Upload agent'}</button>
-            </div>
           </div>
-          {mine.length > 0 && (
-            <>
-              <h2 className="sa-h2b">Your agents</h2>
-              <div className="sa-mine">
-                {mine.map(s => <button key={s.id} className={`sa-chip ${agentId === `strategy:${s.id}` ? 'on' : ''}`} onClick={() => pick(`strategy:${s.id}`)}>{s.name}</button>)}
-              </div>
-            </>
-          )}
+          <p className="muted small">SuperAgent runs only reviewed, pre-approved agents. To turn your own bot or document into rules, use “Upload a file” on the home page.</p>
         </section>
       )}
 
@@ -352,8 +329,16 @@ export function SuperAgent({ health, initialAgent, onExit, onOpenStrategy }: {
             <div className="sa-qn">1</div>
             <div className="sa-qbody">
               <b>Which stock?</b>
-              <p className="hint">Pick the price data to test on, or import an NSE daily CSV for the stock you want.</p>
-              <DataPicker datasets={datasets} value={datasetId} onChange={setDatasetId} onUploaded={d => { setDatasets(x => [d, ...x.filter(y => y.id !== d.id)]); setDatasetId(d.id) }} />
+              <p className="hint">{isTA ? 'Type the NSE symbol. The agents fetch its real prices and news themselves.'
+                : 'Pick the price data to test on, or import an NSE daily CSV for the stock you want.'}</p>
+              {isTA ? (
+                <div className="sa-row">
+                  <label className="field-inline">NSE symbol <input className="sa-input" value={symbol} onChange={e => setSymbol(e.target.value.toUpperCase())} aria-label="NSE symbol" /></label>
+                  <span className="muted small">Real daily prices and news come from Yahoo Finance as {symbol.includes('.') ? symbol : `${symbol || '…'}.NS`} (unofficial source).</span>
+                </div>
+              ) : (
+                <DataPicker datasets={datasets} value={datasetId} onChange={setDatasetId} onUploaded={d => { setDatasets(x => [d, ...x.filter(y => y.id !== d.id)]); setDatasetId(d.id) }} />
+              )}
             </div>
           </div>
           {isTeam ? (
@@ -365,7 +350,7 @@ export function SuperAgent({ health, initialAgent, onExit, onOpenStrategy }: {
                   <div className="sa-checks">
                     {(agent as SuperAgentInfo).analyses.map(x => (
                       <label key={x.id} className={x.available ? '' : 'off'} title={x.detail}>
-                        <input type="checkbox" disabled={!x.available || x.id === 'market'} checked={analyses.includes(x.id)}
+                        <input type="checkbox" disabled={!x.available || (!isTA && x.id === 'market') || (analyses.length === 1 && analyses.includes(x.id))} checked={analyses.includes(x.id)}
                           onChange={e => setAnalyses(a => e.target.checked ? [...a, x.id] : a.filter(y => y !== x.id))} />
                         <span><b>{x.label}</b><br /><span className="muted small">{x.detail}</span></span>
                       </label>
@@ -378,9 +363,11 @@ export function SuperAgent({ health, initialAgent, onExit, onOpenStrategy }: {
                 <div className="sa-qbody">
                   <b>How many recent trading days to backtest?</b>
                   <div className="sa-row">
-                    <input type="range" min={1} max={30} value={days} onChange={e => setDays(+e.target.value)} aria-label="Days to backtest" />
+                    <input type="range" min={1} max={maxDays} value={Math.min(days, maxDays)} onChange={e => setDays(+e.target.value)} aria-label="Days to backtest" />
                     <span className="sa-days-n">{days} day{days > 1 ? 's' : ''}</span>
-                    <span className="muted small">≈ {Math.max(1, Math.round(days * 0.75))}–{Math.round(days * 1.2) || 1} min on local Qwen (3 AI calls per day)</span>
+                    <span className="muted small">{isTA
+                      ? `≈ ${Math.min(days, maxDays) * 10}–${Math.min(days, maxDays) * 20} min on local Qwen (measured ~10 min per day with 2 analysts; more analysts take longer)`
+                      : `≈ ${Math.max(1, Math.round(days * 0.75))}–${Math.round(days * 1.2) || 1} min on local Qwen (3 AI calls per day)`}</span>
                   </div>
                 </div>
               </div>
@@ -407,7 +394,7 @@ export function SuperAgent({ health, initialAgent, onExit, onOpenStrategy }: {
             </div>
           </div>
           <div className="sa-row">
-            <button className="btn sa-go big" onClick={run} disabled={busy || !datasetId || (isTeam && !aiReady)}>⚡ Run backtest</button>
+            <button className="btn sa-go big" onClick={run} disabled={busy || (isTA ? !symbol.trim() : !datasetId) || (isTeam && !aiReady)}>⚡ Run backtest</button>
             <button className="link-btn" onClick={() => setStep(3)}>Skip to paper trading</button>
           </div>
         </section>
@@ -441,7 +428,7 @@ export function SuperAgent({ health, initialAgent, onExit, onOpenStrategy }: {
       {step === 3 && agent && (
         <section className="sa-panel">
           <h2>Paper trading · {agent.title}</h2>
-          <PaperPanel agent={agent as SuperAgentInfo} datasetId={datasetId} capital={capital} analyses={analyses} />
+          <PaperPanel agent={agent} datasetId={datasetId} symbol={symbol} capital={capital} analyses={analyses} />
           <div className="sa-row sa-next"><button className="btn ghost" onClick={() => setStep(4)}>Deploy: get the code →</button></div>
         </section>
       )}

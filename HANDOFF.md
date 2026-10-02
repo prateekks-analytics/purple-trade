@@ -67,6 +67,25 @@ commands). Root `CLAUDE.md` section 1 describes the OLD app — superseded, do n
 - Real TradingAgents v0.5.2 installed in `purple/external/TradingAgents` (own `.venv`, Apache-2.0,
   ignored by git). Graph builds with Ollama qwen3:8b; no real analysis run yet.
 
+## Later on 3 Oct 2026 (uncommitted at time of writing)
+
+- **One upload method:** home "⇪ Upload a file" takes code, .txt/.md, .csv/.tsv, .xlsx, .docx, .pdf, .json;
+  all read as text (stdlib zip/XML; best-effort PDF; no new packages) and translated into rules by the AI.
+  Non-Purple JSON → AI. Price CSVs are redirected to the dataset import. Nothing is executed.
+  SuperAgent has no upload and no "Your agents" (server rejects `strategy:` ids).
+- **TradingAgents (original)** added to SuperAgent (`kind: ta-original`, first card). Purple starts
+  `purple_api/ta_runner.py` with TradingAgents' own `.venv` (JSON-lines progress), Ollama qwen3:8b,
+  API keys stripped from its env, 45-min limit per day, data dirs in `purple/external/ta_home/`.
+  Prices via its yfinance (`<SYMBOL>.NS`, stored as dataset "Yahoo Finance via yfinance (unofficial)").
+  Backtest ≤5 days; paper accounts get "Refresh prices"; Deploy exports a script that runs the original.
+  Ratings map Buy/Overweight→BUY, Sell/Underweight→SELL, Hold→HOLD; long only.
+- **Real run verified (CLI, 3 Oct):** RELIANCE.NS 2026-10-01, market+news analysts → **Buy**, 593 s.
+  Research manager and trader needed a free-text retry (8B model missed structured output); the market
+  report was weak; news data reported unavailable; macro (FRED) skipped. Claims in the final thesis
+  (e.g. Jio users, GDP growth) are model statements, UNVERIFIED.
+- The in-app TradingAgents path is tested with a faked process (53 tests pass); a full in-app run was not
+  repeated (≈10+ min) — ask the user before doing it.
+
 ## Decisions waiting on the user
 
 1. Commit (agent upload + SuperAgent).

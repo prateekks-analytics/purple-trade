@@ -177,8 +177,7 @@ def test_import_code_uses_ai_and_never_applies_draft():
 def test_import_rejects_binary_bad_type_and_bad_json(client):
     assert client.post("/api/agents/import", files={"file": ("x.py", b"\x00\x01binary")}).status_code == 422
     assert client.post("/api/agents/import", files={"file": ("x.exe", b"MZ text")}).status_code == 422
-    r = client.post("/api/agents/import", files={"file": ("x.json", b'{"foo": 1}')})
-    assert r.status_code == 422 and "not a Purple strategy" in r.json()["detail"]
+    # A JSON that is not a Purple strategy now goes to the AI instead (see test_upload_and_ta.py).
 
 
 def test_import_code_when_ai_offline_returns_503():

@@ -72,7 +72,7 @@ export default function App() {
       {route.page === 'strategy'
         ? <Workspace key={route.id} id={route.id} initialIdea={idea} initialProposal={imported} health={health} onBack={home} onRenamed={() => bump(x => x + 1)} />
         : route.page === 'super'
-          ? <SuperAgent key={route.agent ?? 'none'} health={health} initialAgent={route.agent} onExit={home} onOpenStrategy={(sid, p) => open(sid, undefined, p)} />
+          ? <SuperAgent key={route.agent ?? 'none'} health={health} initialAgent={route.agent} onExit={home} />
           : <Home health={health} onOpen={open} onSuper={enterSuper} />}
     </div>
   )

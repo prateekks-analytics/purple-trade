@@ -232,8 +232,8 @@ export function Workspace({ id, initialIdea, initialProposal, health, onBack, on
         {doc.source && (
           <details className="source-panel" open={showSource} onToggle={e => setShowSource((e.target as HTMLDetailsElement).open)}>
             <summary>
-              Uploaded agent: <b>{doc.source.filename}</b>
-              <span className="muted small"> · {doc.source.kind === 'code' ? 'translated by AI — compare with the rules below' : 'imported exactly'} · never executed</span>
+              Uploaded file: <b>{doc.source.filename}</b>
+              <span className="muted small"> · {doc.source.kind === 'purple-json' ? 'imported exactly' : 'translated by AI — compare with the rules below'} · never executed</span>
             </summary>
             <pre><code>{doc.source.content}</code></pre>
           </details>

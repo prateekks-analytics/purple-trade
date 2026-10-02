@@ -170,9 +170,10 @@ def code_percent_checks(code: str, s: Strategy) -> list[str]:
             for p in sorted(fractions) if 0 < p < 100 and p not in have]
 
 
-def translate_agent(code: str, filename: str, provider: Provider | None = None) -> dict:
-    """Translate an uploaded bot's source into a strategy proposal. The code is never executed."""
+def translate_agent(code: str, filename: str, provider: Provider | None = None, is_code: bool = True) -> dict:
+    """Translate an uploaded file (bot source or a document describing a strategy) into a proposal.
+    Nothing is ever executed."""
     result = propose(AGENT_PROMPT.format(filename=filename, code=code), None, [], provider, check_wording=False)
-    if result["strategy"]:
+    if result["strategy"] and is_code:
         result["fidelity"] = code_percent_checks(code, Strategy.model_validate(result["strategy"]))
     return result

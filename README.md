@@ -58,7 +58,12 @@ switches the whole site to a dark neon layout (`:root[data-mode="super"]`). Five
    indicator code; the AI team embeds `agent_core` and calls local Ollama. `DRY_RUN = True` by default;
    optional Zerodha Kite Connect hand-off via env-var keys (call shape UNVERIFIED against current docs).
 
-Endpoints: `GET /api/superagent/agents`, `POST /api/superagent/run`, `GET /api/superagent/jobs/{id}`,
+**TradingAgents (original)** (`kind: ta-original`): the real TradingAgents v0.5.2 in
+`purple/external/TradingAgents` (own `.venv`, git-ignored) started by `ta_runner.py` per trading day on local
+Ollama; prices/news from Yahoo Finance (`.NS`). ~10 min per day with 2 analysts (measured once).
+SuperAgent runs only these curated agents; user files go through the single home-page upload (rules only).
+
+Endpoints: `POST /api/superagent/paper/{id}/refresh`, `GET /api/superagent/agents`, `POST /api/superagent/run`, `GET /api/superagent/jobs/{id}`,
 `GET|POST /api/superagent/paper`, `GET|DELETE /api/superagent/paper/{id}`, `POST .../next-day`,
 `POST .../decide`, `GET /api/superagent/export?agent_id=&symbol=`.
 
@@ -67,7 +72,7 @@ Endpoints: `GET /api/superagent/agents`, `POST /api/superagent/run`, `GET /api/s
 - Double-click `purple\Start Purple Trade.cmd` → http://127.0.0.1:8780 (API + built UI on one port).
 - Development (hot reload): `.claude/launch.json` configs `purple-api` (port 8780) and `purple-web`
   (Vite, port 5173, proxies `/api`).
-- Tests: `cd purple\backend && .venv\Scripts\python.exe -m pytest -q` (45 passing on 3 Oct 2026).
+- Tests: `cd purple\backend && .venv\Scripts\python.exe -m pytest -q` (53 passing on 3 Oct 2026).
 - Type-check/build UI: `cd purple\frontend && npx tsc -b && npm run build`.
 
 ### First-time setup (new machine)

@@ -81,15 +81,15 @@ export function Home({ health, onOpen, onSuper }: {
           </div>
         </div>
         <div className="agent-upload">
-          <input ref={agentRef} type="file" hidden aria-label="Agent file"
-            accept=".json,.py,.pine,.txt,.md,.js,.ts,.mq4,.mq5,.mql,.cs,.java,.r,.ipynb"
+          <input ref={agentRef} type="file" hidden aria-label="File to convert into rules"
+            accept=".py,.pine,.js,.ts,.mq4,.mq5,.mql,.cs,.java,.r,.ipynb,.txt,.md,.json,.csv,.tsv,.xlsx,.xlsm,.docx,.pdf"
             onChange={e => uploadAgent(e.target.files?.[0])} />
           <button className="btn ghost" onClick={() => agentRef.current?.click()} disabled={Boolean(uploading)}>
-            {uploading ? `Translating ${uploading}…` : '⇪ Upload an agent'}
+            {uploading ? `Reading ${uploading}…` : '⇪ Upload a file'}
           </button>
           <span className="muted small">
-            {uploading ? "Reading the bot's logic into rules — this can take up to a minute."
-              : 'Already have a bot? Upload its code (Python, Pine Script, JS, MQL…) or a Purple .json. It is read and converted into editable rules — never run.'}
+            {uploading ? 'Converting it into rules — this can take up to a minute.'
+              : 'Bot or agent code (Python, Pine Script, JS, MQL…), notes, Excel, CSV, Word, PDF or a Purple .json. It is read and converted into editable rules — never run.'}
           </span>
         </div>
         <div className="examples">
@@ -109,7 +109,7 @@ export function Home({ health, onOpen, onSuper }: {
           <div className="featured-grid">
             {featured.map((a, i) => (
               <button key={a.id} className={`feat ${a.kind} ${i === 0 ? 'hero-feat' : ''}`} onClick={() => onSuper(a.id)}>
-                <span className="feat-kind">{a.kind === 'ai-team' ? 'AI agent team' : 'Rule bot'}</span>
+                <span className="feat-kind">{a.kind === 'ta-original' ? 'Original AI agents' : a.kind === 'ai-team' ? 'AI agent team' : 'Rule bot'}</span>
                 <b>{a.title}</b>
                 <span>{a.tagline}</span>
               </button>

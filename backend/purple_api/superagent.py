@@ -4,9 +4,12 @@ from __future__ import annotations
 import inspect
 import json
 import math
+import os
 import re
+import subprocess
 import threading
 import uuid
+from pathlib import Path
 from types import SimpleNamespace
 
 from . import agent_core, indicators
@@ -79,7 +82,18 @@ ANALYSES = [
 
 
 def catalog() -> list[dict]:
+    installed = ta_installed()
     out = [{
+        "id": "tradingagents-original", "kind": "ta-original", "title": "TradingAgents (original)",
+        "tagline": "The real multi-agent framework: market, news, sentiment and fundamentals analysts → bull vs bear "
+                   "debate → trader → risk debate → portfolio manager. Real NSE data from Yahoo Finance.",
+        "source": {"name": "TradingAgents v0.5.2 by Tauric Research (Apache-2.0)", "url": TA_URL},
+        "fidelity": ("Original TradingAgents code, reviewed and approved, running in its own environment on your local AI. "
+                     "Macro data (FRED) is skipped: no API key."
+                     if installed else "Not installed on this computer."),
+        "analyses": TA_ANALYSES, "available": installed,
+        "speed": "about 10 min per trading day on local Qwen",
+    }, {
         "id": "tradingagents", "kind": "ai-team", "title": "TradingAgents Analyst Team",
         "tagline": "Market analyst → bull vs bear debate → trader & risk manager decide BUY / SELL / HOLD each day.",
         "source": {"name": "TradingAgents by Tauric Research (Apache-2.0)", "url": TA_URL},
@@ -235,27 +249,133 @@ class Jobs:
             return json.loads(json.dumps(j)) if j else None
 
 
-def decide_days(bars: list[Bar], start: int, symbol: str, cached: dict[str, dict], complete, log, progress,
+def decide_days(bars: list[Bar], start: int, cached: dict[str, dict], decide_one, log, progress,
                 save) -> dict[str, dict]:
-    """Run the team on every bar from `start` that has no cached decision. Sequential: each day's
-    position depends on earlier decisions."""
+    """Ask the agent about every bar from `start` that has no cached decision. Sequential: each day's
+    position depends on earlier decisions. decide_one(t, holding, log) -> decision dict."""
     decisions = dict(cached)
     for t in range(start, len(bars)):
         date = bars[t].date
         if date in decisions:
             continue
-        snap = agent_core.market_snapshot(bars, t)
-        report = agent_core.market_report(symbol, snap)
-        log("analyst", report, date)
         holding = holding_before(bars, start, decisions, t)
-        d = agent_core.run_team(report, symbol, holding, complete, on_step=lambda k, x: log(k, x, date))
-        d["report"] = report
-        for n in d["notes"]:
+        d = decide_one(t, holding, lambda k, x: log(k, x, date))
+        for n in d.get("notes", []):
             log("note", n, date)
         decisions[date] = d
         save(date, d)
         progress()
     return decisions
+
+
+def team_decider(bars: list[Bar], symbol: str, complete):
+    """Purple's re-implemented team (agent_core)."""
+    def decide(t, holding, log):
+        report = agent_core.market_report(symbol, agent_core.market_snapshot(bars, t))
+        log("analyst", report)
+        d = agent_core.run_team(report, symbol, holding, complete, on_step=log)
+        d["report"] = report
+        return d
+    return decide
+
+
+# ---------- the ORIGINAL TradingAgents, run in its own environment ----------
+
+TA_DIR = Path(__file__).resolve().parents[2] / "external" / "TradingAgents"
+TA_HOME = TA_DIR.parent / "ta_home"
+TA_RUNNER = Path(__file__).with_name("ta_runner.py")
+TA_ANALYSES = [
+    {"id": "market", "label": "Market / technical analyst", "available": True,
+     "detail": "Prices and indicators from Yahoo Finance (stockstats)."},
+    {"id": "news", "label": "News analyst", "available": True, "detail": "Company and global news via Yahoo Finance."},
+    {"id": "social", "label": "Social-sentiment analyst", "available": True, "detail": "Sentiment from news / social sources."},
+    {"id": "fundamentals", "label": "Fundamentals analyst", "available": True,
+     "detail": "Financial statements (SEC EDGAR for US, Yahoo for others)."},
+]
+TA_MAX_DAYS = 5
+
+
+def ta_python() -> Path:
+    win = TA_DIR / ".venv" / "Scripts" / "python.exe"
+    return win if win.exists() else TA_DIR / ".venv" / "bin" / "python"
+
+
+def ta_installed() -> bool:
+    return ta_python().exists() and (TA_DIR / "tradingagents").is_dir()
+
+
+def nse_ticker(symbol: str) -> str:
+    s = re.sub(r"[^A-Za-z0-9.&^_-]", "", symbol or "").upper()
+    return s if "." in s or s.startswith("^") else f"{s}.NS"
+
+
+def _ta_process(args: list[str], on_event, timeout_s: float) -> dict:
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1",
+           "TRADINGAGENTS_RESULTS_DIR": str(TA_HOME / "logs"), "TRADINGAGENTS_CACHE_DIR": str(TA_HOME / "cache"),
+           "TRADINGAGENTS_MEMORY_LOG_PATH": str(TA_HOME / "memory" / "trading_memory.md")}
+    for k in [k for k in env if k.endswith("_API_KEY")]:
+        env.pop(k)  # the approved agent runs on the local model only; never hand it API keys
+    proc = subprocess.Popen([str(ta_python()), str(TA_RUNNER), *args], cwd=str(TA_DIR), env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                            errors="replace")
+    timed_out = threading.Event()
+
+    def kill():
+        timed_out.set()
+        proc.kill()
+    timer = threading.Timer(timeout_s, kill)
+    timer.start()
+    result, tail = None, []
+    try:
+        for line in proc.stdout:
+            line = line.strip()
+            if not line.startswith("{"):
+                tail = (tail + [line])[-15:]
+                continue
+            try:
+                ev = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if ev.get("event") in ("result", "prices"):
+                result = ev
+            elif ev.get("event") == "error":
+                raise RuntimeError(ev.get("text", "TradingAgents failed"))
+            else:
+                on_event(ev)
+        proc.wait()
+    finally:
+        timer.cancel()
+    if result is None:
+        why = f" (stopped after the {timeout_s / 60:.0f}-minute limit)" if timed_out.is_set() else ""
+        raise RuntimeError(f"TradingAgents finished without a result{why}"
+                           + (": " + " | ".join(tail[-3:]) if tail else "."))
+    return result
+
+
+def ta_prices(symbol: str, period: str = "2y") -> list[Bar]:
+    ev = _ta_process(["--ticker", nse_ticker(symbol), "--prices", period], lambda e: None, 180)
+    return [Bar(*row) for row in ev["bars"]]
+
+
+def ta_decider(bars: list[Bar], symbol: str, analysts: list[str], model: str):
+    ticker = nse_ticker(symbol)
+
+    def decide(t, holding, log):
+        def on_event(ev):
+            log(ev.get("who", "step"), ev.get("text", ""))
+        ev = _ta_process(["--ticker", ticker, "--date", bars[t].date, "--analysts", ",".join(analysts), "--model", model],
+                         on_event, 45 * 60)
+        action, notes = ev["action"], []
+        if action == "BUY" and holding:
+            action, notes = "HOLD", [f"TradingAgents rated {ev['rating']} while already holding: kept the position."]
+        elif action == "SELL" and not holding:
+            action, notes = "HOLD", [f"TradingAgents rated {ev['rating']} while flat: no shorting, so no trade."]
+        reports = ev.get("reports", {})
+        return {"action": action, "confidence": 0.0, "rating": ev["rating"],
+                "reason": (reports.get("final_trade_decision") or "")[:1500],
+                "bull": ev.get("bull", ""), "bear": ev.get("bear", ""), "notes": notes,
+                "report": "\n\n".join(f"## {k}\n{v}" for k, v in reports.items() if v)[:20000]}
+    return decide
 
 
 # ---------- code export ----------
@@ -458,6 +578,49 @@ def export_team(symbol: str, model: str) -> str:
             + "\n# ---- indicators ----\n" + _module_body(indicators)
             + "\n# ---- analyst team ----\n" + _module_body(agent_core).replace("from typing import Callable, Optional, Sequence", "from typing import Callable")
             + "\n" + _BROKER + _TEAM_RUNTIME)
+
+
+_TA_RUNTIME = '''
+
+RATING_TO_ACTION = {"buy": "BUY", "overweight": "BUY", "sell": "SELL", "underweight": "SELL", "hold": "HOLD"}
+
+
+def main():
+    p = argparse.ArgumentParser(description="Original TradingAgents decision for one NSE stock and date")
+    p.add_argument("--symbol", default=SYMBOL, help="Yahoo ticker, e.g. RELIANCE.NS")
+    p.add_argument("--date", default=None, help="YYYY-MM-DD (default: today)")
+    p.add_argument("--analysts", default="market,news,social,fundamentals")
+    p.add_argument("--qty", type=int, default=0, help="shares to buy / sell if it acts")
+    a = p.parse_args()
+    import datetime
+    from tradingagents.default_config import DEFAULT_CONFIG
+    from tradingagents.graph.trading_graph import TradingAgentsGraph
+
+    cfg = DEFAULT_CONFIG.copy()
+    cfg.update(llm_provider="ollama", deep_think_llm=MODEL_DEFAULT, quick_think_llm=MODEL_DEFAULT,
+               backend_url=os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1"), temperature=0)
+    ta = TradingAgentsGraph(selected_analysts=a.analysts.split(","), debug=True, config=cfg)
+    date = a.date or datetime.date.today().isoformat()
+    state, rating = ta.propagate(a.symbol, date)
+    action = RATING_TO_ACTION.get(str(rating).lower(), "HOLD")
+    print(f"\\nDECISION {date} {a.symbol}: {rating} -> {action}")
+    if action != "HOLD" and a.qty > 0:
+        place_order(action, a.qty, a.symbol.split(".")[0])
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def export_ta(symbol: str, model: str) -> str:
+    head = _header("TradingAgents (original) runner",
+                   "Runs the ORIGINAL TradingAgents (Tauric Research, Apache-2.0) on your local Ollama model and\n"
+                   "hands its BUY / SELL to your broker (DRY_RUN by default).\n"
+                   "Setup once:  git clone https://github.com/TauricResearch/TradingAgents && cd TradingAgents\n"
+                   "             python -m venv .venv && .venv\\\\Scripts\\\\pip install -e .\n"
+                   "Then run this file with that .venv's python. Prices and news come from Yahoo Finance.")
+    return head + f"\nSYMBOL = {symbol!r}\nMODEL_DEFAULT = {model!r}\n" + _BROKER + _TA_RUNTIME
 
 
 def rules_signal(strategy: Strategy, bars: list[Bar], result: dict) -> dict:

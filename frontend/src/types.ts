@@ -50,7 +50,7 @@ export interface StrategyDoc {
   source: AgentSource | null
 }
 
-export interface AgentSource { filename: string; kind: 'purple-json' | 'code'; content: string; created_at: string }
+export interface AgentSource { filename: string; kind: 'purple-json' | 'code' | 'document'; content: string; created_at: string }
 
 export interface AgentImport { mode: 'exact' | 'ai'; strategy: StrategyDoc; proposal: Proposal | null }
 
@@ -135,7 +135,7 @@ export interface Analysis { id: string; label: string; available: boolean; detai
 
 export interface SuperAgentInfo {
   id: string
-  kind: 'ai-team' | 'rules' | 'research'
+  kind: 'ai-team' | 'ta-original' | 'rules' | 'research'
   title: string
   tagline: string
   source: { name: string; url: string }
@@ -152,6 +152,7 @@ export interface TeamDecision {
   close: number
   action: 'BUY' | 'SELL' | 'HOLD'
   confidence: number
+  rating?: string
   reason: string
   bull: string
   bear: string
@@ -186,6 +187,7 @@ export interface PaperView {
   latest_date: string
   data_note: string
   pending_days: string[]
+  can_refresh?: boolean
   today: { date: string; action: 'BUY' | 'SELL' | 'HOLD' | null; reason: string }
   decisions: TeamDecision[]
   result: BacktestResult

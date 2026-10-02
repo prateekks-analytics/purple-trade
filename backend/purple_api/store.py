@@ -64,6 +64,10 @@ class Store:
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA foreign_keys = ON")
         self._db.executescript(_SCHEMA)
+        cols = {r["name"] for r in self._db.execute("PRAGMA table_info(paper_accounts)")}
+        if "analyses" not in cols:  # added 3 Oct 2026
+            self._db.execute("ALTER TABLE paper_accounts ADD COLUMN analyses TEXT")
+            self._db.commit()
 
     def _q(self, sql: str, args=()):
         with self._lock:
@@ -204,19 +208,26 @@ class Store:
                 (key, date, json.dumps(payload), _now()))
 
     def add_paper(self, name: str, agent_id: str, dataset_id: str, symbol: str | None, synthetic: bool,
-                  start_date: str, capital: float) -> dict:
+                  start_date: str, capital: float, analyses: list[str] | None = None) -> dict:
         pid = _id()
-        self._q("""INSERT INTO paper_accounts(id,name,agent_id,dataset_id,symbol,synthetic,start_date,sim_days,capital,created_at)
-                   VALUES(?,?,?,?,?,?,?,0,?,?)""",
-                (pid, name, agent_id, dataset_id, symbol, int(synthetic), start_date, capital, _now()))
+        self._q("""INSERT INTO paper_accounts(id,name,agent_id,dataset_id,symbol,synthetic,start_date,sim_days,capital,created_at,analyses)
+                   VALUES(?,?,?,?,?,?,?,0,?,?,?)""",
+                (pid, name, agent_id, dataset_id, symbol, int(synthetic), start_date, capital, _now(),
+                 json.dumps(analyses or [])))
         return self.get_paper(pid)
+
+    @staticmethod
+    def _paper(r) -> dict:
+        d = dict(r)
+        d["analyses"] = json.loads(d["analyses"]) if d.get("analyses") else []
+        return d
 
     def get_paper(self, pid: str) -> dict | None:
         r = self._q("SELECT * FROM paper_accounts WHERE id=?", (pid,)).fetchone()
-        return dict(r) if r else None
+        return self._paper(r) if r else None
 
     def list_paper(self) -> list[dict]:
-        return [dict(r) for r in self._q("SELECT * FROM paper_accounts ORDER BY created_at DESC").fetchall()]
+        return [self._paper(r) for r in self._q("SELECT * FROM paper_accounts ORDER BY created_at DESC").fetchall()]
 
     def advance_paper(self, pid: str):
         self._q("UPDATE paper_accounts SET sim_days = sim_days + 1 WHERE id=?", (pid,))

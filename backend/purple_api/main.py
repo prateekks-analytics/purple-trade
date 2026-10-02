@@ -96,10 +96,13 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
 
     @app.post("/api/agents/import")
     async def import_agent(file: UploadFile = File(...)):
-        """Upload a trading bot: Purple JSON imports exactly; code is translated by the AI, never executed."""
-        filename = PurePath(file.filename or "agent.txt").name[:120]
+        """The one upload: bots, code, text, spreadsheets, documents. Purple JSON imports exactly;
+        everything else is read as text and translated by the AI. Nothing is ever executed."""
+        filename = PurePath(file.filename or "upload.txt").name[:120]
         try:
             kind, text = agents.decode_upload(filename, await file.read())
+            if kind == "purple-json" and not agents.is_purple_json(text):
+                kind = "document"  # some other JSON: let the AI look for a strategy in it
             if kind == "purple-json":
                 st = agents.parse_purple_json(text)
                 s = db.create_strategy(st.name)
@@ -114,7 +117,7 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
         if not app.state.provider.status()["available"]:
             raise HTTPException(503, "The AI is offline, so code can't be translated. Purple strategy .json files still import.")
         try:
-            result = ai.translate_agent(text, filename, app.state.provider)
+            result = ai.translate_agent(text, filename, app.state.provider, is_code=kind == "code")
         except ai.ProviderError as e:
             raise HTTPException(503, str(e)) from e
         name = (result["strategy"] or {}).get("name") or PurePath(filename).stem

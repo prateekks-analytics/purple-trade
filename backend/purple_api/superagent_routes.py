@@ -1,4 +1,4 @@
-"""HTTP routes for Trading SuperAgent."""
+"""HTTP routes for Trading SuperAgent. Only the curated, pre-approved catalog can run here."""
 from __future__ import annotations
 
 import re
@@ -8,21 +8,25 @@ from pydantic import BaseModel, Field
 
 from . import superagent as sa
 from .describe import describe, validate
-from .engine import run_backtest
+from .engine import bars_hash, run_backtest
 from .schema import Strategy
 from .store import Store
+
+AI_KINDS = ("ai-team", "ta-original")
 
 
 class RunIn(BaseModel):
     agent_id: str
-    dataset_id: str
+    dataset_id: str | None = None
+    symbol: str | None = None  # NSE symbol for the original TradingAgents (prices come from Yahoo)
     days: int = Field(5, ge=1, le=sa.MAX_AI_DAYS)
     analyses: list[str] = ["market"]
 
 
 class PaperIn(BaseModel):
     agent_id: str
-    dataset_id: str
+    dataset_id: str | None = None
+    symbol: str | None = None
     capital: float = Field(100_000, gt=0, le=1e10)
     analyses: list[str] = ["market"]
 
@@ -31,37 +35,33 @@ def register(app: FastAPI, db: Store):
     jobs = sa.Jobs()
 
     def agent(agent_id: str) -> dict:
-        if agent_id.startswith("strategy:"):
-            s = db.get_strategy(agent_id.split(":", 1)[1])
-            if not s:
-                raise HTTPException(404, "Your agent was not found")
-            body = db.get_version(s["versions"][0]["id"])["body"] if s["versions"] else s["draft"]
-            if not body:
-                raise HTTPException(409, "This agent has no rules yet")
-            st = Strategy.model_validate(body)
-            return {"id": agent_id, "kind": "rules", "title": s["name"], "strategy": st}
         a = next((x for x in sa.catalog() if x["id"] == agent_id), None)
         if not a:
             raise HTTPException(404, "Unknown agent")
         if not a["available"]:
             raise HTTPException(409, f"{a['title']} can't run yet: {a['fidelity']}")
-        out = {"id": a["id"], "kind": a["kind"], "title": a["title"]}
+        out = {"id": a["id"], "kind": a["kind"], "title": a["title"], "analyses": a["analyses"]}
         if a["kind"] == "rules":
             out["strategy"] = sa.rule_strategy(a["id"])
         return out
 
-    def check_analyses(a: dict, chosen: list[str]):
-        if a["kind"] != "ai-team":
-            return
-        ok = {x["id"] for x in sa.ANALYSES if x["available"]}
+    def check_analyses(a: dict, chosen: list[str]) -> list[str]:
+        if a["kind"] not in AI_KINDS:
+            return []
+        ok = {x["id"] for x in a["analyses"] if x["available"]}
         bad = [c for c in chosen if c not in ok]
         if bad or not chosen:
-            raise HTTPException(422, "Only market analysis is available until a news / fundamentals / sentiment data source is connected.")
+            raise HTTPException(422, f"Choose from the available analyses: {', '.join(sorted(ok))}.")
+        return [x["id"] for x in a["analyses"] if x["id"] in chosen]  # catalog order
 
-    def provider_or_503():
+    def model_or_503() -> str:
         p = app.state.provider
         if not p.status()["available"]:
-            raise HTTPException(503, "The local AI is offline, so the analyst team can't run. Rule bots still work.")
+            raise HTTPException(503, "The local AI is offline, so AI agents can't run. Rule bots still work.")
+        return p.model
+
+    def team_complete():
+        p = app.state.provider
         return lambda system, user: p.complete(system, [{"role": "user", "content": user}])
 
     def rules_ready(st: Strategy, n_bars: int):
@@ -72,25 +72,54 @@ def register(app: FastAPI, db: Store):
         if n_bars <= v["warmup_bars"] + 1:
             raise HTTPException(409, {"errors": [f"Dataset has {n_bars} rows but these rules need {v['warmup_bars']} days of warm-up plus one more."]})
 
+    def store_prices(symbol: str) -> dict:
+        """Download daily prices through TradingAgents' Yahoo connection and keep them as a dataset."""
+        try:
+            bars = sa.ta_prices(symbol)
+        except RuntimeError as e:
+            raise HTTPException(502, f"Couldn't download prices for {sa.nse_ticker(symbol)}: {e}") from e
+        h = bars_hash(bars)
+        existing = db.find_dataset_by_hash(h)
+        if existing:
+            return existing
+        ticker = sa.nse_ticker(symbol)
+        return db.add_dataset(f"{ticker} · {bars[0].date} → {bars[-1].date}", ticker,
+                              "Yahoo Finance via yfinance (unofficial; not verified against NSE)", bars, h)
+
+    def decider(a: dict, bars, symbol: str, analyses: list[str]):
+        if a["kind"] == "ta-original":
+            return sa.ta_decider(bars, symbol, analyses, app.state.provider.model)
+        return sa.team_decider(bars, symbol, team_complete())
+
     @app.get("/api/superagent/agents")
     def agents():
         out = []
         for a in sa.catalog():
             a = dict(a)
             if a.get("strategy"):
-                st = Strategy.model_validate(a["strategy"])
-                a["describe"] = describe(st)
+                a["describe"] = describe(Strategy.model_validate(a["strategy"]))
             out.append(a)
         return out
 
     @app.post("/api/superagent/run")
     def run(body: RunIn):
         a = agent(body.agent_id)
-        check_analyses(a, body.analyses)
-        bars = db.get_bars(body.dataset_id)
-        if bars is None:
+        analyses = check_analyses(a, body.analyses)
+        if a["kind"] == "ta-original":
+            model_or_503()
+            if not body.symbol:
+                raise HTTPException(422, "Enter an NSE symbol, e.g. RELIANCE.")
+            if body.days > sa.TA_MAX_DAYS:
+                raise HTTPException(422, f"The original TradingAgents takes many minutes per day; choose at most {sa.TA_MAX_DAYS} days.")
+            meta = store_prices(body.symbol)
+            did = meta["id"]
+        else:
+            did = body.dataset_id
+            meta = db.get_dataset_meta(did) if did else None
+        bars = db.get_bars(did) if did else None
+        if bars is None or meta is None:
             raise HTTPException(404, "Dataset not found")
-        meta = db.get_dataset_meta(body.dataset_id)
+
         if a["kind"] == "rules":
             st = a["strategy"]
             rules_ready(st, len(bars))
@@ -98,17 +127,18 @@ def register(app: FastAPI, db: Store):
             res.update(dataset=meta, describe=describe(st), mode="draft")
             return {"kind": "rules", "result": res, "strategy": st.model_dump()}
 
-        complete = provider_or_503()
+        model = model_or_503()
         if len(bars) < body.days + 30:
             raise HTTPException(409, "Not enough price history for that many days.")
         start = len(bars) - body.days
         symbol = meta["symbol"] or "the stock"
-        key = f"bt:{a['id']}:{app.state.provider.model}:{body.dataset_id}:{bars[start].date}"
+        key = f"bt:{a['id']}:{model}:{','.join(analyses)}:{did}:{bars[start].date}"
         cached = db.get_decisions(key)
         missing = sum(1 for b in bars[start:] if b.date not in cached)
+        decide = decider(a, bars, symbol, analyses)
 
         def work(log, progress):
-            ds = sa.decide_days(bars, start, symbol, cached, complete, log, progress,
+            ds = sa.decide_days(bars, start, cached, decide, log, progress,
                                 save=lambda d, p: db.save_decision(key, d, p))
             res = sa.simulate_decisions(bars, start, ds, 100_000, a["title"])
             res["dataset"] = meta
@@ -125,23 +155,27 @@ def register(app: FastAPI, db: Store):
         return j
 
     # ----- paper trading -----
+    def account_bars(p: dict):
+        if p["synthetic"]:
+            return sa.paper_bars(True, db.get_bars(p["dataset_id"]) or [], p["sim_days"])
+        latest = db.latest_dataset_for(p["symbol"]) if p["symbol"] else None
+        return db.get_bars(latest["id"] if latest else p["dataset_id"]) or []
+
     def paper_view(p: dict) -> dict:
         a = agent(p["agent_id"])
+        bars = account_bars(p)
         if p["synthetic"]:
-            base = db.get_bars(p["dataset_id"]) or []
-            bars = sa.paper_bars(True, base, p["sim_days"])
             data_note = "Synthetic prices (not market data). Use 'Next trading day' to move the market forward."
+        elif a["kind"] == "ta-original" or (p["symbol"] or "").endswith(".NS"):
+            data_note = f"Real {p['symbol']} prices. Use 'Refresh prices' after each trading day to move the account forward."
         else:
-            latest = db.latest_dataset_for(p["symbol"]) if p["symbol"] else None
-            did = latest["id"] if latest else p["dataset_id"]
-            bars = db.get_bars(did) or []
-            data_note = (f"Using your newest {p['symbol']} prices. Import a newer NSE CSV for {p['symbol']} to move the account forward."
-                         if p["symbol"] else "Import newer prices to move the account forward.")
+            data_note = f"Import a newer CSV for {p['symbol'] or 'this stock'} to move the account forward."
         start = next((i for i, b in enumerate(bars) if b.date >= p["start_date"]), None)
         if start is None:
             raise HTTPException(409, "Price data no longer reaches the account's start date.")
         view = {"account": p, "agent": {"id": a["id"], "title": a["title"], "kind": a["kind"]},
-                "latest_date": bars[-1].date, "data_note": data_note, "pending_days": []}
+                "latest_date": bars[-1].date, "data_note": data_note, "pending_days": [],
+                "can_refresh": not p["synthetic"] and bool(p["symbol"]) and sa.ta_installed()}
         if a["kind"] == "rules":
             st = a["strategy"].model_copy(update={"initial_capital": p["capital"]})
             res = run_backtest(st, bars, trade_from=start)
@@ -154,7 +188,7 @@ def register(app: FastAPI, db: Store):
             view["decisions"] = [{"date": b.date, "close": b.close, **ds[b.date]} for b in bars[start:] if b.date in ds]
             last = ds.get(bars[-1].date)
             view["today"] = ({"date": bars[-1].date, "action": last["action"], "reason": last["reason"]} if last
-                             else {"date": bars[-1].date, "action": None, "reason": "The team hasn't decided today yet."})
+                             else {"date": bars[-1].date, "action": None, "reason": "The agent hasn't decided today yet."})
         view["result"] = res
         return view
 
@@ -171,16 +205,21 @@ def register(app: FastAPI, db: Store):
     @app.post("/api/superagent/paper")
     def create_paper(body: PaperIn):
         a = agent(body.agent_id)
-        check_analyses(a, body.analyses)
-        meta = db.get_dataset_meta(body.dataset_id)
-        bars = db.get_bars(body.dataset_id)
+        analyses = check_analyses(a, body.analyses)
+        if a["kind"] == "ta-original":
+            if not body.symbol:
+                raise HTTPException(422, "Enter an NSE symbol, e.g. RELIANCE.")
+            meta = store_prices(body.symbol)
+        else:
+            meta = db.get_dataset_meta(body.dataset_id) if body.dataset_id else None
+        bars = db.get_bars(meta["id"]) if meta else None
         if not meta or not bars:
             raise HTTPException(404, "Dataset not found")
         if a["kind"] == "rules":
             rules_ready(a["strategy"], len(bars))
         name = f"{a['title']} · {meta['symbol'] or meta['name']}"
-        p = db.add_paper(name[:120], a["id"], body.dataset_id, meta["symbol"], bool(meta["synthetic"]),
-                         bars[-1].date, body.capital)
+        p = db.add_paper(name[:120], a["id"], meta["id"], meta["symbol"], bool(meta["synthetic"]),
+                         bars[-1].date, body.capital, analyses)
         return paper_view(p)
 
     @app.get("/api/superagent/paper/{pid}")
@@ -191,28 +230,36 @@ def register(app: FastAPI, db: Store):
     def next_day(pid: str):
         p = paper_or_404(pid)
         if not p["synthetic"]:
-            raise HTTPException(409, "Real-data accounts move forward only when you import newer prices.")
+            raise HTTPException(409, "Real-data accounts move forward when prices are refreshed.")
         db.advance_paper(pid)
         return paper_view(db.get_paper(pid))
 
+    @app.post("/api/superagent/paper/{pid}/refresh")
+    def refresh(pid: str):
+        p = paper_or_404(pid)
+        if p["synthetic"] or not p["symbol"]:
+            raise HTTPException(409, "Only real-symbol accounts can refresh prices.")
+        store_prices(p["symbol"])
+        return paper_view(p)
+
     @app.post("/api/superagent/paper/{pid}/decide")
     def decide(pid: str):
-        """Ask the AI team for every day it hasn't decided yet (background job)."""
+        """Ask the AI agent for every day it hasn't decided yet (background job)."""
         p = paper_or_404(pid)
         v = paper_view(p)
-        if v["agent"]["kind"] != "ai-team":
+        a = agent(p["agent_id"])
+        if a["kind"] not in AI_KINDS:
             raise HTTPException(400, "Rule bots decide instantly; nothing to run.")
-        complete = provider_or_503()
-        key = f"paper:{pid}"
-        bars = (sa.paper_bars(True, db.get_bars(p["dataset_id"]) or [], p["sim_days"]) if p["synthetic"]
-                else db.get_bars((db.latest_dataset_for(p["symbol"]) or {"id": p["dataset_id"]})["id"]) if p["symbol"]
-                else db.get_bars(p["dataset_id"]))
+        model_or_503()
+        bars = account_bars(p)
         start = next(i for i, b in enumerate(bars) if b.date >= p["start_date"])
+        key = f"paper:{pid}"
         cached = db.get_decisions(key)
+        analyses = p.get("analyses") or ["market"]
+        do = decider(a, bars, p["symbol"] or "the stock", analyses)
 
         def work(log, progress):
-            sa.decide_days(bars, start, p["symbol"] or "the stock", cached, complete, log, progress,
-                           save=lambda d, x: db.save_decision(key, d, x))
+            sa.decide_days(bars, start, cached, do, log, progress, save=lambda d, x: db.save_decision(key, d, x))
             return {"paper_id": pid}
 
         return {"kind": "job", "job": jobs.start(work, len(v["pending_days"]))}
@@ -227,10 +274,12 @@ def register(app: FastAPI, db: Store):
     @app.get("/api/superagent/export")
     def export(agent_id: str, symbol: str = "INFY"):
         a = agent(agent_id)
-        sym = re.sub(r"[^A-Z0-9&_-]", "", symbol.upper())[:20] or "INFY"
+        sym = re.sub(r"[^A-Z0-9&_.-]", "", symbol.upper())[:20] or "INFY"
         slug = re.sub(r"[^a-z0-9]+", "_", a["title"].lower()).strip("_")[:40] or "agent"
         if a["kind"] == "rules":
             code = sa.export_rules(a["strategy"], sym)
+        elif a["kind"] == "ta-original":
+            code = sa.export_ta(sa.nse_ticker(sym), app.state.provider.model)
         else:
             code = sa.export_team(sym, app.state.provider.model)
-        return {"filename": f"{slug}_{sym.lower()}.py", "code": code}
+        return {"filename": f"{slug}_{re.sub(r'[^a-z0-9]+', '_', sym.lower())}.py", "code": code}

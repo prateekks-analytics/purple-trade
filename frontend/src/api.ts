@@ -71,12 +71,13 @@ export const api = {
 
   // ----- Trading SuperAgent -----
   saAgents: () => req<SuperAgentInfo[]>('/api/superagent/agents'),
-  saRun: (agent_id: string, dataset_id: string, days: number, analyses: string[]) =>
-    req<RunResponse>('/api/superagent/run', json('POST', { agent_id, dataset_id, days, analyses })),
+  saRun: (agent_id: string, dataset_id: string | null, days: number, analyses: string[], symbol?: string) =>
+    req<RunResponse>('/api/superagent/run', json('POST', { agent_id, dataset_id, days, analyses, symbol })),
   saJob: <R,>(id: string) => req<Job<R>>(`/api/superagent/jobs/${id}`),
   saPaperList: () => req<PaperAccount[]>('/api/superagent/paper'),
-  saPaperCreate: (agent_id: string, dataset_id: string, capital: number, analyses: string[]) =>
-    req<PaperView>('/api/superagent/paper', json('POST', { agent_id, dataset_id, capital, analyses })),
+  saPaperCreate: (agent_id: string, dataset_id: string | null, capital: number, analyses: string[], symbol?: string) =>
+    req<PaperView>('/api/superagent/paper', json('POST', { agent_id, dataset_id, capital, analyses, symbol })),
+  saPaperRefresh: (id: string) => req<PaperView>(`/api/superagent/paper/${id}/refresh`, json('POST')),
   saPaper: (id: string) => req<PaperView>(`/api/superagent/paper/${id}`),
   saPaperNextDay: (id: string) => req<PaperView>(`/api/superagent/paper/${id}/next-day`, json('POST')),
   saPaperDecide: (id: string) => req<{ kind: 'job'; job: Job }>(`/api/superagent/paper/${id}/decide`, json('POST')),
