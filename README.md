@@ -18,15 +18,56 @@ One loop on one screen instead of the old multi-step pipeline:
    Flow diagram view is a read-only picture of the same tree.
 5. **Auto-test** — every valid change auto-saves and re-runs the backtest (metrics, account-value vs
    buy & hold, price chart with ▲/▼ trades, trade table with the rule that fired).
-6. **Save version** — immutable snapshot. Blocked while open questions or errors exist, or when identical
+6. **Upload an agent** (home screen) — users bring an existing bot. A Purple `.json` (from
+   *Download JSON*) imports exactly. Source code (.py, .pine, .js, .ts, .mq4/.mq5, .txt, .md, .ipynb;
+   ≤200 KB, ≤16k chars for the local AI) is translated by the AI into a proposal card, **never
+   executed**; inexpressible parts (trailing stops, shorting, ML, broker calls…) become blocking
+   "Not supported yet" questions. The original code stays visible above the rules, and a check flags
+   fractions in the code (e.g. `0.05`) that no P&L rule uses. Endpoints: `POST /api/agents/import`,
+   `GET /api/strategies/{id}/export`.
+7. **Save version** — immutable snapshot. Blocked while open questions or errors exist, or when identical
    to the last version. Versions can be viewed read-only and used as a base for further edits.
+
+## Trading SuperAgent (added 3 October 2026)
+
+Separate mode (`#/super`, topbar "⚡ Trading SuperAgent" or the home page's **Featured bots**). Entering
+plays a full-screen warp animation (`Warp.tsx`, skipped with prefers-reduced-motion, click to skip) and
+switches the whole site to a dark neon layout (`:root[data-mode="super"]`). Five steps:
+
+1. **Agent.** Featured agents come from Prof. Harnal's 27 Sep 2026 mail (TradingAgents by Tauric Research;
+   crewAI `stock_analysis`), plus "Upload your own bot" and "Your agents" (existing strategies).
+   - *TradingAgents Analyst Team* (`agent_core.py`): Purple's re-implementation of the TradingAgents
+     workflow, **not their code**. Market analyst report computed deterministically (SMA50/200, EMA10,
+     MACD 12/26/9, RSI14, Bollinger 20/2, ATR14, VWMA20; bars up to the decision day only), then
+     bull → bear → trader/risk manager on local Qwen (3 calls per day, ~15–20 s per day measured).
+     Actions are validated (long only, one position; invalid → HOLD). News / fundamentals / sentiment
+     analysts are shown but disabled until a data source is approved.
+   - Four rule bots built from TradingAgents' indicator guide (`superagent.RULE_BOTS`): Golden Cross
+     Trend, RSI 30/70 Reversal, MACD Momentum (EMA12 × EMA26 = MACD zero-cross), Fast EMA Momentum +
+     Trend Filter.
+   - *CrewAI Stock Analysis* is listed as "needs setup" (SEC filings + web search, US only, no trades).
+2. **Setup.** Questions per agent: stock/dataset (or NSE CSV import), analyses, days to backtest
+   (AI, 1–30), paper capital.
+3. **Backtest.** Rule bots: the normal engine. AI team: background job (`/api/superagent/jobs/{id}`)
+   with a live feed; same timing contract (decide on close, fill next open, 5 bps slippage, 3 bps fee).
+   Decisions are cached in `agent_decisions` so the model is never re-asked for the same day.
+4. **Paper trade.** `paper_accounts` start flat on the last day of the data. Synthetic accounts step
+   forward with "Next trading day" (same seeded series, identical prefix); real-symbol accounts move when
+   a newer CSV for that symbol is imported. AI accounts: "Ask the team" decides pending days; logbook kept.
+5. **Deploy.** Standalone Python file (stdlib only): rule bots embed the exact rule tree + Purple's
+   indicator code; the AI team embeds `agent_core` and calls local Ollama. `DRY_RUN = True` by default;
+   optional Zerodha Kite Connect hand-off via env-var keys (call shape UNVERIFIED against current docs).
+
+Endpoints: `GET /api/superagent/agents`, `POST /api/superagent/run`, `GET /api/superagent/jobs/{id}`,
+`GET|POST /api/superagent/paper`, `GET|DELETE /api/superagent/paper/{id}`, `POST .../next-day`,
+`POST .../decide`, `GET /api/superagent/export?agent_id=&symbol=`.
 
 ## Run
 
 - Double-click `purple\Start Purple Trade.cmd` → http://127.0.0.1:8780 (API + built UI on one port).
 - Development (hot reload): `.claude/launch.json` configs `purple-api` (port 8780) and `purple-web`
   (Vite, port 5173, proxies `/api`).
-- Tests: `cd purple\backend && .venv\Scripts\python.exe -m pytest -q` (26 passing on 2 Oct 2026).
+- Tests: `cd purple\backend && .venv\Scripts\python.exe -m pytest -q` (45 passing on 3 Oct 2026).
 - Type-check/build UI: `cd purple\frontend && npx tsc -b && npm run build`.
 
 ### First-time setup (new machine)
@@ -77,6 +118,14 @@ close, not force-sold; no signal on the last bar can fill. Excludes STT, stamp d
   "sell at next day's close" (accompanied by a blocking question). ~12–25 s per request.
 - NOT verified: mobile/narrow layout rendering, dark mode rendering, real NSE CSV from the NSE site
   (format covered only by a test fixture), keyboard-only pass.
+
+### Agent upload, verified 2 Oct 2026
+
+Browser test with a Pine Script EMA-crossover bot (EMA20/50 cross, RSI<60, 5% TP, 2% SL, crossunder exit,
+3% trailing stop): Qwen translated the entry, SL and crossunder exactly, flagged the trailing stop as
+unsupported, but misread the TP as 3%. The percentage check flagged "0.05 (= 5%) not used"; after an
+inline fix the backtest ran. Lesson: code translation by the 8B model needs the side-by-side source
+and checks; a stronger model would reduce misreads.
 
 ## Decisions pending (user)
 

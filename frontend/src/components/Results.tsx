@@ -132,7 +132,9 @@ export function Results({ result, running, error }: { result: BacktestResult | n
       <div className="trades">
         <div className="chart-title">Every trade, and why</div>
         {trades.length === 0 ? (
-          <p className="hint">No trades. The buy rules never matched on this data{result.warmup_bars ? ` (the first ${result.warmup_bars} days are indicator warm-up)` : ''}.</p>
+          <p className="hint">{result.strategy_hash === 'ai-team'
+            ? 'No trades. The team did not decide to buy in this period.'
+            : `No trades. The buy rules never matched on this data${result.warmup_bars ? ` (the first ${result.warmup_bars} days are indicator warm-up)` : ''}.`}</p>
         ) : (
           <div className="table-wrap">
             <table>

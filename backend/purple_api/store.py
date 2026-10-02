@@ -26,9 +26,22 @@ CREATE TABLE IF NOT EXISTS datasets (
   rows INTEGER NOT NULL, first_date TEXT NOT NULL, last_date TEXT NOT NULL,
   hash TEXT NOT NULL, bars TEXT NOT NULL, synthetic INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS agent_sources (
+  strategy_id TEXT PRIMARY KEY REFERENCES strategies(id), filename TEXT NOT NULL, kind TEXT NOT NULL,
+  content TEXT NOT NULL, created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY, strategy_id TEXT NOT NULL, version_id TEXT, dataset_id TEXT NOT NULL,
   strategy_body TEXT NOT NULL, result TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS agent_decisions (
+  cache_key TEXT NOT NULL, date TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL,
+  PRIMARY KEY (cache_key, date)
+);
+CREATE TABLE IF NOT EXISTS paper_accounts (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, agent_id TEXT NOT NULL, dataset_id TEXT NOT NULL,
+  symbol TEXT, synthetic INTEGER NOT NULL, start_date TEXT NOT NULL, sim_days INTEGER NOT NULL DEFAULT 0,
+  capital REAL NOT NULL, created_at TEXT NOT NULL
 );
 """
 
@@ -77,10 +90,13 @@ class Store:
             return None
         versions = self._q("SELECT id, number, hash, created_at FROM versions WHERE strategy_id=? ORDER BY number DESC",
                            (sid,)).fetchall()
+        src = self._q("SELECT filename, kind, content, created_at FROM agent_sources WHERE strategy_id=?",
+                      (sid,)).fetchone()
         return {
             "id": r["id"], "name": r["name"], "created_at": r["created_at"], "updated_at": r["updated_at"],
             "draft": json.loads(r["draft"]) if r["draft"] else None,
             "chat": json.loads(r["chat"]), "versions": [dict(v) for v in versions],
+            "source": dict(src) if src else None,
         }
 
     def save_draft(self, sid: str, draft: dict | None, name: str | None = None):
@@ -96,7 +112,12 @@ class Store:
         chat = s["chat"] + [{**m, "at": _now()} for m in messages]
         self._q("UPDATE strategies SET chat=?, updated_at=? WHERE id=?", (json.dumps(chat), _now(), sid))
 
+    def set_source(self, sid: str, filename: str, kind: str, content: str):
+        self._q("INSERT OR REPLACE INTO agent_sources(strategy_id,filename,kind,content,created_at) VALUES(?,?,?,?,?)",
+                (sid, filename, kind, content, _now()))
+
     def delete_strategy(self, sid: str):
+        self._q("DELETE FROM agent_sources WHERE strategy_id=?", (sid,))
         self._q("DELETE FROM runs WHERE strategy_id=?", (sid,))
         self._q("DELETE FROM versions WHERE strategy_id=?", (sid,))
         self._q("DELETE FROM strategies WHERE id=?", (sid,))
@@ -171,6 +192,43 @@ class Store:
         return {"id": r["id"], "strategy_id": r["strategy_id"], "version_id": r["version_id"],
                 "dataset_id": r["dataset_id"], "created_at": r["created_at"],
                 "strategy": json.loads(r["strategy_body"]), "result": json.loads(r["result"])}
+
+
+    # ----- SuperAgent: AI decisions (cached so the model is never re-asked) and paper accounts -----
+    def get_decisions(self, key: str) -> dict[str, dict]:
+        rows = self._q("SELECT date, payload FROM agent_decisions WHERE cache_key=? ORDER BY date", (key,)).fetchall()
+        return {r["date"]: json.loads(r["payload"]) for r in rows}
+
+    def save_decision(self, key: str, date: str, payload: dict):
+        self._q("INSERT OR REPLACE INTO agent_decisions(cache_key,date,payload,created_at) VALUES(?,?,?,?)",
+                (key, date, json.dumps(payload), _now()))
+
+    def add_paper(self, name: str, agent_id: str, dataset_id: str, symbol: str | None, synthetic: bool,
+                  start_date: str, capital: float) -> dict:
+        pid = _id()
+        self._q("""INSERT INTO paper_accounts(id,name,agent_id,dataset_id,symbol,synthetic,start_date,sim_days,capital,created_at)
+                   VALUES(?,?,?,?,?,?,?,0,?,?)""",
+                (pid, name, agent_id, dataset_id, symbol, int(synthetic), start_date, capital, _now()))
+        return self.get_paper(pid)
+
+    def get_paper(self, pid: str) -> dict | None:
+        r = self._q("SELECT * FROM paper_accounts WHERE id=?", (pid,)).fetchone()
+        return dict(r) if r else None
+
+    def list_paper(self) -> list[dict]:
+        return [dict(r) for r in self._q("SELECT * FROM paper_accounts ORDER BY created_at DESC").fetchall()]
+
+    def advance_paper(self, pid: str):
+        self._q("UPDATE paper_accounts SET sim_days = sim_days + 1 WHERE id=?", (pid,))
+
+    def delete_paper(self, pid: str):
+        self._q("DELETE FROM agent_decisions WHERE cache_key=?", (f"paper:{pid}",))
+        self._q("DELETE FROM paper_accounts WHERE id=?", (pid,))
+
+    def latest_dataset_for(self, symbol: str) -> dict | None:
+        r = self._q("SELECT id FROM datasets WHERE symbol=? AND synthetic=0 ORDER BY last_date DESC, created_at DESC LIMIT 1",
+                    (symbol,)).fetchone()
+        return self.get_dataset_meta(r["id"]) if r else None
 
 
 def default_store() -> Store:

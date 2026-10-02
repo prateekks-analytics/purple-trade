@@ -1,5 +1,6 @@
 import type {
-  BacktestResult, Dataset, Health, Proposal, Review, Strategy, StrategyDoc, StrategySummary, Template,
+  AgentImport, BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, Review, RunResponse, Strategy,
+  StrategyDoc, StrategySummary, SuperAgentInfo, Template,
 } from './types'
 
 export class ApiError extends Error {
@@ -15,7 +16,7 @@ export class ApiError extends Error {
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
-    res = await fetch(path, init)
+    res = await fetch(path, { cache: 'no-store', ...init })
   } catch {
     throw new ApiError(0, 'Cannot reach the Purple Trade server. Is it running?')
   }
@@ -57,6 +58,29 @@ export const api = {
     fd.append('source_note', sourceNote)
     return req<Dataset>('/api/datasets', { method: 'POST', body: fd })
   },
+  importAgent: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return req<AgentImport>('/api/agents/import', { method: 'POST', body: fd })
+  },
+  exportStrategy: (id: string, versionId?: string | null) =>
+    req<{ format: string; version: number; strategy: Strategy }>(
+      `/api/strategies/${id}/export${versionId ? `?version_id=${versionId}` : ''}`),
   backtest: (strategy_id: string, dataset_id: string, version_id?: string) =>
     req<BacktestResult>('/api/backtests', json('POST', { strategy_id, dataset_id, version_id: version_id ?? null })),
+
+  // ----- Trading SuperAgent -----
+  saAgents: () => req<SuperAgentInfo[]>('/api/superagent/agents'),
+  saRun: (agent_id: string, dataset_id: string, days: number, analyses: string[]) =>
+    req<RunResponse>('/api/superagent/run', json('POST', { agent_id, dataset_id, days, analyses })),
+  saJob: <R,>(id: string) => req<Job<R>>(`/api/superagent/jobs/${id}`),
+  saPaperList: () => req<PaperAccount[]>('/api/superagent/paper'),
+  saPaperCreate: (agent_id: string, dataset_id: string, capital: number, analyses: string[]) =>
+    req<PaperView>('/api/superagent/paper', json('POST', { agent_id, dataset_id, capital, analyses })),
+  saPaper: (id: string) => req<PaperView>(`/api/superagent/paper/${id}`),
+  saPaperNextDay: (id: string) => req<PaperView>(`/api/superagent/paper/${id}/next-day`, json('POST')),
+  saPaperDecide: (id: string) => req<{ kind: 'job'; job: Job }>(`/api/superagent/paper/${id}/decide`, json('POST')),
+  saPaperDelete: (id: string) => req<{ ok: boolean }>(`/api/superagent/paper/${id}`, json('DELETE')),
+  saExport: (agent_id: string, symbol: string) =>
+    req<{ filename: string; code: string }>(`/api/superagent/export?agent_id=${encodeURIComponent(agent_id)}&symbol=${encodeURIComponent(symbol)}`),
 }

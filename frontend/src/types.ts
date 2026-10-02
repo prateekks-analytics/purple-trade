@@ -47,7 +47,12 @@ export interface StrategyDoc {
   chat: ChatMessage[]
   versions: VersionMeta[]
   review: Review | null
+  source: AgentSource | null
 }
+
+export interface AgentSource { filename: string; kind: 'purple-json' | 'code'; content: string; created_at: string }
+
+export interface AgentImport { mode: 'exact' | 'ai'; strategy: StrategyDoc; proposal: Proposal | null }
 
 export interface StrategySummary { id: string; name: string; updated_at: string; versions: number }
 
@@ -125,5 +130,65 @@ export interface BacktestResult {
 }
 
 export interface Template { id: string; title: string; blurb: string; strategy: Partial<Strategy>; review: Review }
+
+export interface Analysis { id: string; label: string; available: boolean; detail: string }
+
+export interface SuperAgentInfo {
+  id: string
+  kind: 'ai-team' | 'rules' | 'research'
+  title: string
+  tagline: string
+  source: { name: string; url: string }
+  fidelity: string
+  analyses: Analysis[]
+  available: boolean
+  speed: string
+  strategy?: Strategy
+  describe?: NonNullable<Review['describe']>
+}
+
+export interface TeamDecision {
+  date: string
+  close: number
+  action: 'BUY' | 'SELL' | 'HOLD'
+  confidence: number
+  reason: string
+  bull: string
+  bear: string
+  notes: string[]
+  report: string
+}
+
+export type TeamResult = BacktestResult & { decisions: TeamDecision[] }
+
+export interface Job<R = unknown> {
+  id: string
+  status: 'running' | 'done' | 'error'
+  done: number
+  total: number
+  log: { kind: string; text: string; date: string | null }[]
+  result: R | null
+  error: string | null
+}
+
+export type RunResponse =
+  | { kind: 'rules'; result: BacktestResult; strategy: Strategy }
+  | { kind: 'job'; job: Job<TeamResult> }
+
+export interface PaperAccount {
+  id: string; name: string; agent_id: string; dataset_id: string; symbol: string | null
+  synthetic: number; start_date: string; sim_days: number; capital: number; created_at: string
+}
+
+export interface PaperView {
+  account: PaperAccount
+  agent: { id: string; title: string; kind: SuperAgentInfo['kind'] }
+  latest_date: string
+  data_note: string
+  pending_days: string[]
+  today: { date: string; action: 'BUY' | 'SELL' | 'HOLD' | null; reason: string }
+  decisions: TeamDecision[]
+  result: BacktestResult
+}
 
 export interface Health { ok: boolean; ai: { provider: string; model: string; available: boolean; detail: string } }

@@ -137,3 +137,64 @@ def test_ai_endpoint_keeps_draft_until_user_applies():
     assert r["strategy"]["questions"] == ["RSI period?"]
     s = c.get(f"/api/strategies/{sid}").json()
     assert s["draft"] is None and len(s["chat"]) == 2
+
+
+# ---------- agent import ----------
+
+PINE = b"""//@version=5
+strategy("RSI bot")
+r = ta.rsi(close, 14)
+if r < 30
+    strategy.entry("L", strategy.long)
+if r > 70
+    strategy.close("L")
+"""
+
+
+def test_import_purple_json_is_exact_and_round_trips(client):
+    sid = client.post("/api/strategies", json={}).json()["id"]
+    client.put(f"/api/strategies/{sid}/draft", json=GOOD)
+    exported = client.get(f"/api/strategies/{sid}/export").json()
+    assert exported["format"] == "purple-strategy"
+    r = client.post("/api/agents/import", files={"file": ("rsi.json", json.dumps(exported).encode())}).json()
+    assert r["mode"] == "exact" and r["proposal"] is None
+    doc = r["strategy"]
+    assert doc["draft"]["entry"] == exported["strategy"]["entry"]
+    assert doc["source"]["filename"] == "rsi.json"
+
+
+def test_import_code_uses_ai_and_never_applies_draft():
+    prov = FakeProvider(json.dumps({"strategy": {**GOOD, "name": "RSI bot"}, "questions": [], "notes": "Translated RSI rules."}))
+    c = TestClient(create_app(store=Store(":memory:"), provider=prov))
+    r = c.post("/api/agents/import", files={"file": ("bot.pine", PINE)}).json()
+    assert r["mode"] == "ai" and r["proposal"]["strategy"]["name"] == "RSI bot"
+    assert r["strategy"]["draft"] is None                     # user must press Apply
+    assert r["strategy"]["source"]["content"].startswith("//@version=5")
+    prompt = prov.calls[0][-1]["content"]
+    assert "never run" in prompt and "ta.rsi(close, 14)" in prompt
+
+
+def test_import_rejects_binary_bad_type_and_bad_json(client):
+    assert client.post("/api/agents/import", files={"file": ("x.py", b"\x00\x01binary")}).status_code == 422
+    assert client.post("/api/agents/import", files={"file": ("x.exe", b"MZ text")}).status_code == 422
+    r = client.post("/api/agents/import", files={"file": ("x.json", b'{"foo": 1}')})
+    assert r.status_code == 422 and "not a Purple strategy" in r.json()["detail"]
+
+
+def test_import_code_when_ai_offline_returns_503():
+    class Offline(FakeProvider):
+        def status(self):
+            return {"provider": "x", "model": "x", "available": False, "detail": "off"}
+    c = TestClient(create_app(store=Store(":memory:"), provider=Offline()))
+    assert c.post("/api/agents/import", files={"file": ("bot.py", b"buy if rsi<30")}).status_code == 503
+
+
+def test_code_percent_check_flags_misread_take_profit():
+    from purple_api.ai import code_percent_checks
+    code = "strategy.exit(profit = close * 0.05, loss = close * 0.02)\n// trail after 0.03"
+    exit_ = {"kind": "any", "items": [
+        {"kind": "compare", "left": {"kind": "position", "field": "pnl_pct"}, "op": ">=", "right": {"kind": "const", "value": 3}},
+        {"kind": "compare", "left": {"kind": "position", "field": "pnl_pct"}, "op": "<=", "right": {"kind": "const", "value": -2}}]}
+    s = Strategy.model_validate({**GOOD, "exit": exit_})
+    warn = code_percent_checks(code, s)
+    assert len(warn) == 1 and "5%" in warn[0]

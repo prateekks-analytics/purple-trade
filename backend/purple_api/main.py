@@ -1,14 +1,14 @@
 """Purple Trade API."""
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
-from . import ai
+from . import agents, ai, superagent_routes
 from .csvdata import CsvError, parse_csv
 from .describe import describe, validate
 from .engine import bars_hash, run_backtest, strategy_hash
@@ -93,6 +93,55 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
         _strategy_or_404(sid)
         db.delete_strategy(sid)
         return {"ok": True}
+
+    @app.post("/api/agents/import")
+    async def import_agent(file: UploadFile = File(...)):
+        """Upload a trading bot: Purple JSON imports exactly; code is translated by the AI, never executed."""
+        filename = PurePath(file.filename or "agent.txt").name[:120]
+        try:
+            kind, text = agents.decode_upload(filename, await file.read())
+            if kind == "purple-json":
+                st = agents.parse_purple_json(text)
+                s = db.create_strategy(st.name)
+                db.save_draft(s["id"], st.model_dump(), name=st.name)
+                db.set_source(s["id"], filename, kind, text)
+                db.append_chat(s["id"], {"role": "assistant", "content": f"Imported {filename} exactly as written (no AI involved)."})
+                return {"mode": "exact", "strategy": get_strategy(s["id"]), "proposal": None}
+            agents.check_code_size(text)
+        except agents.AgentError as e:
+            raise HTTPException(422, str(e)) from e
+
+        if not app.state.provider.status()["available"]:
+            raise HTTPException(503, "The AI is offline, so code can't be translated. Purple strategy .json files still import.")
+        try:
+            result = ai.translate_agent(text, filename, app.state.provider)
+        except ai.ProviderError as e:
+            raise HTTPException(503, str(e)) from e
+        name = (result["strategy"] or {}).get("name") or PurePath(filename).stem
+        s = db.create_strategy(name[:120])
+        db.set_source(s["id"], filename, kind, text)
+        reply = result["notes"] or ("" if result["ok"] else result["error"]) or "Translation ready."
+        if result["questions"]:
+            reply += "\n" + "\n".join(f"• {q}" for q in result["questions"])
+        db.append_chat(s["id"], {"role": "user", "content": f"Uploaded agent: {filename}"},
+                       {"role": "assistant", "content": reply, "proposal": result["strategy"] is not None})
+        if result["strategy"]:
+            result["review"] = _review(result["strategy"])
+        return {"mode": "ai", "strategy": get_strategy(s["id"]), "proposal": result}
+
+    @app.get("/api/strategies/{sid}/export")
+    def export_strategy(sid: str, version_id: str | None = None):
+        s = _strategy_or_404(sid)
+        if version_id:
+            v = db.get_version(version_id)
+            if not v or v["strategy_id"] != sid:
+                raise HTTPException(404, "Version not found")
+            body = v["body"]
+        elif s["draft"]:
+            body = s["draft"]
+        else:
+            raise HTTPException(400, "Nothing to export yet")
+        return agents.export_payload(body)
 
     @app.post("/api/review")
     def review(body: dict):
@@ -223,6 +272,8 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
             raise HTTPException(404, "Run not found")
         return {"id": r["id"], **r["result"]}
 
+    superagent_routes.register(app, db)
+
     # ----- frontend (production build) -----
     dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if dist.is_dir():
@@ -230,6 +281,8 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
 
         @app.get("/{path:path}", include_in_schema=False)
         def spa(path: str):
+            if path == "api" or path.startswith("api/"):
+                raise HTTPException(404, "Unknown API route")
             f = dist / path
             if path and f.is_file() and dist in f.resolve().parents:
                 return FileResponse(f)

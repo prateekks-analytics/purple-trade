@@ -9,10 +9,10 @@ from pydantic import ValidationError
 from ..schema import (
     All, AnyOf, Compare, ConstOperand, Cross, IndicatorOperand, Not, PriceOperand, Strategy,
 )
-from .prompt import REPAIR_PROMPT, SYSTEM_PROMPT
+from .prompt import AGENT_PROMPT, REPAIR_PROMPT, SYSTEM_PROMPT
 from .providers import Provider, ProviderError, default_provider
 
-__all__ = ["propose", "default_provider", "ProviderError", "number_fidelity"]
+__all__ = ["propose", "translate_agent", "default_provider", "ProviderError", "number_fidelity"]
 
 
 def _extract_json(text: str) -> dict:
@@ -123,7 +123,7 @@ def number_fidelity(text: str, s: Strategy) -> list[str]:
 
 
 def propose(message: str, current: Strategy | None, history: list[dict],
-            provider: Provider | None = None) -> dict:
+            provider: Provider | None = None, check_wording: bool = True) -> dict:
     provider = provider or default_provider()
     msgs: list[dict] = []
     for h in history[-6:]:
@@ -150,10 +150,29 @@ def propose(message: str, current: Strategy | None, history: list[dict],
                     "error": f"The model's answer did not match the strategy format after a retry: {str(e2)[:300]}",
                     "fidelity": [], "attempts": attempts, "provider": provider.name, "model": provider.model}
 
-    questions = drop_false_questions(message, questions)
-    if strategy:
-        strategy = strategy.model_copy(update={"questions": questions})
-    fidelity = (number_fidelity(message, strategy) + wording_checks(message, strategy)) if strategy else []
+    if check_wording:
+        questions = drop_false_questions(message, questions)
+        if strategy:
+            strategy = strategy.model_copy(update={"questions": questions})
+    fidelity = (number_fidelity(message, strategy) + wording_checks(message, strategy)) if strategy and check_wording else []
     return {"ok": True, "strategy": strategy.model_dump() if strategy else None, "questions": questions,
             "notes": notes, "error": None, "fidelity": fidelity, "attempts": attempts,
             "provider": provider.name, "model": provider.model}
+
+
+def code_percent_checks(code: str, s: Strategy) -> list[str]:
+    """Fractions like 0.05 in bot code usually mean 5%; each should appear as a P&L rule."""
+    code = re.sub(r"//@version=\d+", "", code)
+    fractions = {round(float(x) * 100, 4) for x in re.findall(r"(?<![\w.])0\.\d{1,4}(?![\d.])", code)}
+    have = {round(abs(o.value), 4) for n in list(_nodes(s.entry)) + list(_nodes(s.exit))
+            if isinstance(n, Compare) for o in (n.right, n.left) if isinstance(o, ConstOperand)}
+    return [f"The code contains {p / 100:g} (= {p:g}%), but no rule uses {p:g}%. Check the take-profit / stop values."
+            for p in sorted(fractions) if 0 < p < 100 and p not in have]
+
+
+def translate_agent(code: str, filename: str, provider: Provider | None = None) -> dict:
+    """Translate an uploaded bot's source into a strategy proposal. The code is never executed."""
+    result = propose(AGENT_PROMPT.format(filename=filename, code=code), None, [], provider, check_wording=False)
+    if result["strategy"]:
+        result["fidelity"] = code_percent_checks(code, Strategy.model_validate(result["strategy"]))
+    return result

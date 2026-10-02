@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../api'
-import type { BacktestResult, Dataset, Health, Review, Strategy, StrategyDoc } from '../types'
+import type { BacktestResult, Dataset, Health, Proposal, Review, Strategy, StrategyDoc } from '../types'
 import { blankStrategy, crossesToCompare } from '../lib/tree'
 import { Chat, type LiveProposal } from './Chat'
 import { GraphView } from './GraphView'
@@ -9,8 +9,8 @@ import { DataPicker, Results } from './Results'
 
 let proposalKey = 0
 
-export function Workspace({ id, initialIdea, health, onBack, onRenamed }: {
-  id: string; initialIdea?: string; health: Health | null; onBack: () => void; onRenamed: () => void
+export function Workspace({ id, initialIdea, initialProposal, health, onBack, onRenamed }: {
+  id: string; initialIdea?: string; initialProposal?: Proposal; health: Health | null; onBack: () => void; onRenamed: () => void
 }) {
   const [doc, setDoc] = useState<StrategyDoc | null>(null)
   const [draft, setDraft] = useState<Strategy | null>(null)
@@ -21,7 +21,9 @@ export function Workspace({ id, initialIdea, health, onBack, onRenamed }: {
   const [result, setResult] = useState<BacktestResult | null>(null)
   const [running, setRunning] = useState(false)
   const [runError, setRunError] = useState<string | null>(null)
-  const [proposals, setProposals] = useState<LiveProposal[]>([])
+  const [proposals, setProposals] = useState<LiveProposal[]>(() =>
+    initialProposal ? [{ ...initialProposal, key: ++proposalKey, status: 'pending', base: null }] : [])
+  const [showSource, setShowSource] = useState(Boolean(initialProposal))
   const [chatBusy, setChatBusy] = useState(false)
   const [chatText, setChatText] = useState('')
   const [view, setView] = useState<'rules' | 'graph'>('rules')
@@ -171,6 +173,21 @@ export function Workspace({ id, initialIdea, health, onBack, onRenamed }: {
 
   const setQuestions = (qs: string[]) => draft && edit({ ...draft, questions: qs })
 
+  const download = async () => {
+    try {
+      const payload = await api.exportStrategy(id, versionId)
+      const label = versionId ? `v${doc.versions.find(x => x.id === versionId)?.number}` : 'draft'
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `${(payload.strategy.name || 'strategy').replace(/[^\w-]+/g, '_')}-${label}.purple.json`
+      a.click()
+      URL.revokeObjectURL(a.href)
+    } catch (e) {
+      setToast({ kind: 'err', text: e instanceof ApiError ? e.message : String(e) })
+    }
+  }
+
   return (
     <div className="workspace">
       <Chat messages={doc.chat} proposals={proposals} busy={chatBusy}
@@ -200,6 +217,7 @@ export function Workspace({ id, initialIdea, health, onBack, onRenamed }: {
                 {doc.versions.map(x => <option key={x.id} value={x.id}>Version {x.number} · {x.created_at.slice(0, 10)}</option>)}
               </select>
             )}
+            {shown && <button className="btn ghost sm" onClick={download} title="Download these rules as a Purple .json file (re-uploadable)">Download JSON</button>}
             {versionId && versionBody ? (
               <button className="btn ghost sm" onClick={() => edit({ ...versionBody, questions: [] })}>Edit from this version</button>
             ) : (
@@ -210,6 +228,16 @@ export function Workspace({ id, initialIdea, health, onBack, onRenamed }: {
           </div>
         </div>
         {!versionId && saveHint && draft && !matchesLatest && <div className="save-hint">{saveHint}</div>}
+
+        {doc.source && (
+          <details className="source-panel" open={showSource} onToggle={e => setShowSource((e.target as HTMLDetailsElement).open)}>
+            <summary>
+              Uploaded agent: <b>{doc.source.filename}</b>
+              <span className="muted small"> · {doc.source.kind === 'code' ? 'translated by AI — compare with the rules below' : 'imported exactly'} · never executed</span>
+            </summary>
+            <pre><code>{doc.source.content}</code></pre>
+          </details>
+        )}
 
         {!shown ? (
           <div className="no-rules">

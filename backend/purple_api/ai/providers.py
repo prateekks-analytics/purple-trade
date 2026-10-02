@@ -48,7 +48,7 @@ class OllamaProvider:
             "format": "json",
             "stream": False,
             "think": False,
-            "options": {"temperature": 0, "num_ctx": 8192},
+            "options": {"temperature": 0, "seed": 42, "num_ctx": 8192},
         }
         try:
             r = httpx.post(f"{self.base_url}/api/chat", json=body, timeout=self.timeout)

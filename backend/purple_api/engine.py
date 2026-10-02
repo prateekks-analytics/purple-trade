@@ -120,7 +120,9 @@ def _r(x: float, nd: int = 2) -> float:
     return round(x, nd)
 
 
-def run_backtest(strategy: Strategy, bars: list[Bar]) -> dict:
+def run_backtest(strategy: Strategy, bars: list[Bar], trade_from: int = 0) -> dict:
+    """trade_from: first bar index whose close may raise a signal (earlier bars are warm-up only).
+    Used by paper trading so an account starts flat on its start date."""
     if len(bars) < 2:
         raise ValueError("Need at least 2 bars.")
     ctx = _Ctx(bars=bars)
@@ -174,7 +176,7 @@ def run_backtest(strategy: Strategy, bars: list[Bar]) -> dict:
             exposure_bars += 1
 
         # 3) evaluate rules on this close; schedule for next open
-        if t < len(bars) - 1:
+        if trade_from <= t < len(bars) - 1:
             if ctx.pos is None:
                 if evaluate(ctx, strategy.entry, t):
                     pending = ("buy", _reason(ctx, strategy.entry, t))
@@ -197,6 +199,8 @@ def run_backtest(strategy: Strategy, bars: list[Bar]) -> dict:
             "fees": _r(p.entry_fee), "open": True,
         }
 
+    if trade_from:
+        bars, equity = bars[trade_from:], equity[trade_from:]
     return {
         "engine": ENGINE_VERSION,
         "metrics": _metrics(strategy, bars, equity, trades, exposure_bars),

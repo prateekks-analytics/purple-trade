@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import type { ChatMessage, Proposal, Review } from '../types'
 import { lineDiff } from '../lib/tree'
 
@@ -83,7 +83,6 @@ export function Chat({ messages, proposals, busy, aiReady, aiDetail, draftText, 
   const inputRef = useRef<HTMLTextAreaElement>(null)
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }) }, [messages.length, proposals.length, busy])
   useEffect(() => { if (draftText) inputRef.current?.focus() }, [draftText])
-  const [hist] = useState(messages.length)
 
   const send = () => {
     const t = draftText.trim()
@@ -107,7 +106,6 @@ export function Chat({ messages, proposals, busy, aiReady, aiDetail, draftText, 
         {messages.map((m, i) => (
           <div key={i} className={`msg ${m.role}`}>
             <div className="bubble">{m.content}</div>
-            {i < hist && m.proposal && <div className="muted small">proposal from an earlier session</div>}
           </div>
         ))}
         {proposals.map(p => (
