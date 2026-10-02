@@ -4,3 +4,4 @@ backend/.venv/
 backend/data/
 __pycache__/
 *.sqlite3
+*.egg-info/
