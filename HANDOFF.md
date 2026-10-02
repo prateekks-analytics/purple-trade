@@ -1,106 +1,96 @@
-# Purple Trade — new-chat handoff (3 October 2026, updated after Trading SuperAgent)
+# Purple Trade — new-chat handoff (3 October 2026, end of day)
 
-Read this first, then `purple/README.md` (architecture, engine contract, SuperAgent section, run/test
-commands). Root `CLAUDE.md` section 1 describes the OLD app — superseded, do not extend or reuse it.
+Read this first, then `purple/README.md` (architecture, engine contract, SuperAgent, endpoints, commands).
+Root `CLAUDE.md` section 1 describes the OLD root app — superseded; do not extend or reuse it.
+Leave the TCS/Infosys RAG files untouched.
 
-## Where things stand
+## What exists
 
-- **Active build:** `purple/` — FastAPI + SQLite backend (`purple/backend/purple_api/`), Vite + React +
-  TypeScript frontend (`purple/frontend/`).
-- **Strategy workflow:** describe idea → AI proposal card → inline-editable typed rules → auto-backtest →
-  immutable versions. Plus Upload an agent (code translated, never executed) and Download JSON.
-- **Trading SuperAgent (new, 3 Oct):** separate mode with warp animation + full layout switch.
-  Agent → Setup questions → Backtest → Paper trade → Deploy code. Featured: TradingAgents Analyst Team
-  (Purple re-implementation of Tauric Research's workflow on local Qwen, market analyst only), four rule
-  bots from TradingAgents' indicator guide, CrewAI Stock Analysis listed as "needs setup".
-  Source: Prof. Ashok Harnal's mail of 27 Sep 2026 ("More Details — Project: Trade Algorithmically using
-  AI agents") linking TauricResearch/TradingAgents and tonykipkemboi/crewAI-examples stock_analysis.
-  Neither repo contains rule-based bots; nothing was downloaded or installed from them.
-- **Tests:** 45 backend tests passing (31 earlier + 14 SuperAgent). `npx tsc -b` clean; `frontend/dist`
-  rebuilt 3 Oct.
-- **Browser-verified 3 Oct (built-in browser):** warp animation → super layout; RSI 30/70 and Golden
-  Cross backtests; AI team 3-day backtest on live qwen3:8b (~50 s, HOLD ×3 with indicator-cited
-  reasons); AI paper account → 2 × Next trading day → Ask the team (3 days: BUY then HOLD ×2, open
-  position marked to market); Deploy code shown. Phone width 375 px: no horizontal scroll after a fix.
-  Exported files run outside the app: rules script prints HOLD; AI team script runs the full debate and
-  prints `[DRY RUN] would BUY 5 x SAMPLE`.
-- Rule bots on the synthetic SAMPLE (750 days, B&H +61.56%): Golden Cross +0.87% (1 closed, 1 open),
-  RSI 30/70 +16.99% (2 trades), MACD Momentum +14.84% (16), Fast EMA +1.43% (40). Synthetic, not market data.
-- One paper account ("TradingAgents Analyst Team · SAMPLE") was created in the live DB during testing.
+- **Active build:** `purple/` — FastAPI + SQLite backend (`backend/purple_api/`), Vite + React + TS frontend.
+- **Method 1 — your own ideas/files → rules.** Home idea box (text) and ONE button "⇪ Upload a file"
+  (code .py/.pine/.js/.mq5…, .txt/.md, .csv, .xlsx, .docx, .pdf, .json). Purple JSON imports exactly;
+  everything else is read as text (stdlib readers, best-effort PDF) and translated into rules by the AI.
+  **Nothing uploaded is ever executed.** Then: inline-editable rules, auto-backtest, immutable versions.
+- **Method 2 — Trading SuperAgent** (`#/super`, warp animation + dark layout). **Curated, pre-approved
+  agents only; no upload.** Steps: Agent → Setup questions → Backtest → Paper trade → Deploy (Python file,
+  DRY_RUN by default; optional Zerodha Kite hand-off, UNVERIFIED against current docs). Agents:
+  1. **TradingAgents (original)** — real TradingAgents v0.5.2 (Tauric Research, Apache-2.0) in
+     `purple/external/TradingAgents` (own `.venv`, git-ignored), run per day via `purple_api/ta_runner.py`
+     on local Ollama qwen3:8b; API keys stripped; 45-min limit per day; prices/news from Yahoo Finance
+     (`SYMBOL.NS`). Analysts selectable: market, news, social, fundamentals. Backtest ≤5 days.
+  2. **TradingAgents Analyst Team** — Purple's faster rebuild (`agent_core.py`): deterministic market
+     report → bull → bear → trader/risk, 3 AI calls per day (~20 s/day).
+  3. Four rule bots from TradingAgents' indicator guide (Golden Cross, RSI 30/70, MACD Momentum, Fast EMA).
+  4. CrewAI Stock Analysis — listed, "needs setup" (SEC filings + web search, no trades).
+- **Featured bots** on the home page open SuperAgent with the agent preselected.
+
+## Verified (3 Oct 2026)
+
+- 53 backend tests pass (`cd purple\backend && .venv\Scripts\python.exe -m pytest -q`); `npx tsc -b` clean;
+  `frontend/dist` rebuilt.
+- Browser: warp → super layout; rule-bot backtests; rebuilt team 3-day backtest on live Qwen; paper
+  account with next-day + team decisions; Deploy; 375 px phone width without horizontal scroll; single
+  upload button; original agent card and its Setup (symbol + 4 analysts).
+- **Real TradingAgents, CLI run:** RELIANCE.NS, 2026-10-01, market+news → **Buy** in **593 s**.
+  Research manager and trader needed a free-text retry (8B model missed structured output); market
+  report weak; news data reported unavailable; FRED macro skipped (no key). Thesis facts (Jio users, GDP
+  growth) are model statements — UNVERIFIED.
+- NOT verified: a full in-app run of TradingAgents (original) (bridge tested with a faked process only);
+  dark mode / keyboard pass of normal mode; a real NSE-website CSV.
+
+## Open topic for the next chat: TradingAgents speed
+
+~10 min per trading day because one decision = ~15–25 LLM calls (2 analysts with tool calls, bull/bear,
+research manager, trader, 3 risk debaters, portfolio manager) on local 8B at ~15–40 s per call; more
+analysts = longer. Fine for one daily live/paper decision; painful for backtests (5 days ≈ 50 min).
+Options to decide (user has not chosen):
+1. Paid cloud model (est. 1–2 min/day; costs per run — quote cost and get approval first).
+2. Faster machine / strong GPU (free, several times faster).
+3. Fewer analysts (market only ≈ half the time, weaker analysis).
+4. Pre-compute past days overnight in the background (decisions are already cached per day).
+
+**Findings 3 Oct 2026 (later session, measured, no code changed):**
+- GPU already in use: Ollama runs qwen3:8b on the RTX 4060 Laptop (8 GB), ~36 tok/s output,
+  ~1,700 tok/s prompt. Time is almost all output generation, not prompt reading.
+- Qwen3 "thinking" is ON in the TradingAgents run: Ollama generated 1,000–2,250 tokens per call while
+  the saved visible answers are ~250–700 tokens → ~60% of the 593 s is hidden reasoning.
+- Probe (same bear-analyst prompt, native `/api/chat`): think=on 30.5 s / 728 tokens; think=off
+  5.2 s / 201 tokens, answer similar length. Quality impact on full decisions UNVERIFIED.
+- Ollama context is 4,096 tokens (VRAM default); log shows 6 "context shift" events (half the
+  prompt discarded) — TradingAgents prompts reach ~4,000 tokens. Raising num_ctx to 8,192 (~+0.6 GB
+  KV) should fit in 8 GB; UNVERIFIED.
+- Recommended order: (a) free — think off + num_ctx 8192 for TA runs (est. ~2–4 min/day), (b) market
+  analyst only for backtests, (c) overnight precompute, (d) cloud only if quality is insufficient.
+- Cloud cost estimate (Anthropic list prices cached 25 Sep 2026, per 1M tokens in/out: Haiku 4.5
+  $1/$5, Sonnet 5.5 $2/$10, Opus 5.5 $4/$20; assumed ~50–80k input + ~8–12k output per trading day,
+  2 analysts): Haiku ≈ $0.10–0.14/day, Sonnet 5.5 ≈ $0.20–0.30/day, Opus 5.5 ≈ $0.40–0.55/day.
+  ESTIMATE — real token use not measured; needs API key + spend approval. TradingAgents ships an
+  Anthropic client, so it is a config switch in `ta_runner.py`.
+
+## Other pending user decisions
+
+- Full in-app TradingAgents run (~10–20 min) — ask before doing it.
+- AI provider for the whole app (local Qwen vs paid); real NSE data source/licensing; FRED key (free).
+- Optional PDF library (pypdf) for better PDF reading — install needs approval.
 
 ## Git
 
-- Commits: `3fe281a` initial, `da3f726` new build, `5f289eb` untrack egg-info.
-- **Uncommitted:** agent-upload feature (from 2 Oct) **and** Trading SuperAgent (new `agent_core.py`,
-  `superagent.py`, `superagent_routes.py`, `tests/test_superagent.py`, `Warp.tsx`, `SuperAgent.tsx`;
-  edits to `engine.py` (`trade_from`), `store.py`, `main.py` (routes + `/api/*` 404 instead of SPA HTML),
-  `ai/providers.py` (seed 42), frontend `App/Home/Results/api/types/styles`), README, this file.
-  Root `CLAUDE.md` also modified (not by this work). Ask before committing.
-- No global git identity. Previous commits used one-off
-  `git -c user.name="Prateek" -c user.email="prateeksinghamu@gmail.com"`.
+- `master`: 3fe281a initial · da3f726 new build · 5f289eb egg-info · 1b82b56 agent upload + SuperAgent ·
+  a621e41 ignore purple/external · cba185a decision: curated SuperAgent · 8da0e0e single upload +
+  original TradingAgents. This handoff rewrite is uncommitted unless committed after writing.
+- No global git identity; commits use one-off `git -c user.name="Prateek" -c user.email="prateeksinghamu@gmail.com"`.
+- Commit only when the user asks.
 
 ## Run
 
 - One click: `purple\Start Purple Trade.cmd` → http://127.0.0.1:8780.
-- Dev: `.claude/launch.json` → `purple-api` (8780, restart after backend edits) and `purple-web` (5173).
-- Local AI: Ollama `qwen3:8b` at 127.0.0.1:11434.
-- DB: `purple/backend/data/purple.sqlite3` (new tables `agent_decisions`, `paper_accounts`).
+- Dev: `.claude/launch.json` → `purple-api` (8780; restart after backend edits) and `purple-web` (5173).
+- Ollama qwen3:8b at 127.0.0.1:11434. DB `purple/backend/data/purple.sqlite3` (test paper account
+  "TradingAgents Analyst Team · SAMPLE" exists). TradingAgents data/logs: `purple/external/ta_home/`.
 
-## Known weaknesses (honest)
+## Working rules
 
-- Qwen 8B reasoning errors in the debate (e.g. bear called the lower Bollinger band "overbought"; mixed
-  up SMA20/SMA200). The report numbers are deterministic; the model's interpretation is not reliable.
-- Ollama output varied for the same day between runs (backtest HOLD vs paper BUY on 2025-11-14) before
-  `seed: 42` was added; reproducibility after the seed is UNVERIFIED. Decisions are cached per run.
-- AI team has only the market analyst; no news/fundamentals/sentiment (needs data sources + approval).
-- Paper trading has no live feed: synthetic "next day" or newer imported CSVs only.
-- Kite Connect call in exported code and broker/SEBI notes are UNVERIFIED against current docs.
-- Earlier: narrow-screen pass only done for SuperAgent + home; dark-mode of normal mode, keyboard-only,
-  real NSE CSV still not verified.
-
-## Decided by the user (3 Oct 2026)
-
-- **No execution of user-uploaded code** (not even sandboxed) for launch. Reason: undetectable malicious
-  code could compromise the server; safe hosting would need throwaway microVMs on separate infra.
-- **SuperAgent = curated, pre-approved agents only** (vetted by us), usable on the site and downloadable
-  as a trade bot. User code may only be *imported* as rules (read, never run).
-- Real TradingAgents v0.5.2 installed in `purple/external/TradingAgents` (own `.venv`, Apache-2.0,
-  ignored by git). Graph builds with Ollama qwen3:8b; no real analysis run yet.
-
-## Later on 3 Oct 2026 (uncommitted at time of writing)
-
-- **One upload method:** home "⇪ Upload a file" takes code, .txt/.md, .csv/.tsv, .xlsx, .docx, .pdf, .json;
-  all read as text (stdlib zip/XML; best-effort PDF; no new packages) and translated into rules by the AI.
-  Non-Purple JSON → AI. Price CSVs are redirected to the dataset import. Nothing is executed.
-  SuperAgent has no upload and no "Your agents" (server rejects `strategy:` ids).
-- **TradingAgents (original)** added to SuperAgent (`kind: ta-original`, first card). Purple starts
-  `purple_api/ta_runner.py` with TradingAgents' own `.venv` (JSON-lines progress), Ollama qwen3:8b,
-  API keys stripped from its env, 45-min limit per day, data dirs in `purple/external/ta_home/`.
-  Prices via its yfinance (`<SYMBOL>.NS`, stored as dataset "Yahoo Finance via yfinance (unofficial)").
-  Backtest ≤5 days; paper accounts get "Refresh prices"; Deploy exports a script that runs the original.
-  Ratings map Buy/Overweight→BUY, Sell/Underweight→SELL, Hold→HOLD; long only.
-- **Real run verified (CLI, 3 Oct):** RELIANCE.NS 2026-10-01, market+news analysts → **Buy**, 593 s.
-  Research manager and trader needed a free-text retry (8B model missed structured output); the market
-  report was weak; news data reported unavailable; macro (FRED) skipped. Claims in the final thesis
-  (e.g. Jio users, GDP growth) are model statements, UNVERIFIED.
-- The in-app TradingAgents path is tested with a faked process (53 tests pass); a full in-app run was not
-  repeated (≈10+ min) — ask the user before doing it.
-
-## Decisions waiting on the user
-
-1. Commit (agent upload + SuperAgent).
-2. Real TradingAgents: download + install it (separate venv) and/or add news/fundamentals sources.
-3. AI provider: local Qwen vs paid model (no paid calls without approval).
-4. Real NSE data source and licensing.
-
-## Suggested next steps
-
-1. Version comparison; dark-mode/keyboard pass of normal mode.
-2. Paper trading on real NSE data (import CSV daily, or an approved feed).
-3. If approved: news/fundamentals analysts, then a stronger model for the debate.
-
-## Working rules carried over
-
-- No uploads, mail, publishing, accounts, spending or installs without explicit approval; verify live
-  before claiming done; mark unverified claims; no subagents unless asked; leave TCS/Infosys RAG untouched.
-- Never execute uploaded or AI-generated code on the server. Exported code starts in DRY_RUN.
+- No uploads, mail, publishing, accounts, spending or installs without explicit approval.
+- **Ask before redoing/repeating finished work** (re-runs, rebuilds, rewrites) — token cost.
+- Never execute user-uploaded or AI-generated code. Only curated agents run.
+- Verify live before claiming done; mark unverified claims; no subagents unless asked; terse replies.
