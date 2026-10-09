@@ -21,6 +21,8 @@ class RunIn(BaseModel):
     symbol: str | None = None  # NSE symbol for the original TradingAgents (prices come from Yahoo)
     days: int = Field(5, ge=1, le=sa.MAX_AI_DAYS)
     analyses: list[str] = ["market"]
+    engine: str = "local"  # original TradingAgents only: which AI runs it (see superagent.TA_ENGINES)
+    confirm_paid: bool = False  # must be true for a paid engine: the user saw the cost estimate and approved it
 
 
 class PaperIn(BaseModel):
@@ -86,9 +88,20 @@ def register(app: FastAPI, db: Store):
         return db.add_dataset(f"{ticker} · {bars[0].date} → {bars[-1].date}", ticker,
                               "Yahoo Finance via yfinance (unofficial; not verified against NSE)", bars, h)
 
-    def decider(a: dict, bars, symbol: str, analyses: list[str]):
+    def ta_engine_or_error(engine_id: str, confirm_paid: bool) -> dict:
+        e = sa.ta_engine(engine_id)
+        if not e:
+            raise HTTPException(422, f"Unknown AI engine {engine_id!r}.")
+        info = next(x for x in sa.ta_engines(app.state.provider.status()["available"]) if x["id"] == e["id"])
+        if not info["available"]:
+            raise HTTPException(503, f"{e['label']} can't run: {info['why']}")
+        if e["paid"] and not confirm_paid:
+            raise HTTPException(402, f"{e['label']} costs money per run. Confirm the cost estimate to continue.")
+        return e
+
+    def decider(a: dict, bars, symbol: str, analyses: list[str], engine: dict | None = None):
         if a["kind"] == "ta-original":
-            return sa.ta_decider(bars, symbol, analyses, app.state.provider.model)
+            return sa.ta_decider(bars, symbol, analyses, app.state.provider.model, engine)
         return sa.team_decider(bars, symbol, team_complete())
 
     @app.get("/api/superagent/agents")
@@ -98,6 +111,8 @@ def register(app: FastAPI, db: Store):
             a = dict(a)
             if a.get("strategy"):
                 a["describe"] = describe(Strategy.model_validate(a["strategy"]))
+            if a["kind"] == "ta-original":
+                a["engines"] = sa.ta_engines(app.state.provider.status()["available"])
             out.append(a)
         return out
 
@@ -105,8 +120,9 @@ def register(app: FastAPI, db: Store):
     def run(body: RunIn):
         a = agent(body.agent_id)
         analyses = check_analyses(a, body.analyses)
+        engine = None
         if a["kind"] == "ta-original":
-            model_or_503()
+            engine = ta_engine_or_error(body.engine, body.confirm_paid)
             if not body.symbol:
                 raise HTTPException(422, "Enter an NSE symbol, e.g. RELIANCE.")
             if body.days > sa.TA_MAX_DAYS:
@@ -127,7 +143,10 @@ def register(app: FastAPI, db: Store):
             res.update(dataset=meta, describe=describe(st), mode="draft")
             return {"kind": "rules", "result": res, "strategy": st.model_dump()}
 
-        model = model_or_503()
+        if engine and engine["id"] != "local":
+            model = f"{engine['id']}:{engine['quick']}/{engine['deep']}"  # separate decision cache per cloud engine
+        else:
+            model = model_or_503()
         if len(bars) < body.days + 30:
             raise HTTPException(409, "Not enough price history for that many days.")
         start = len(bars) - body.days
@@ -135,7 +154,7 @@ def register(app: FastAPI, db: Store):
         key = f"bt:{a['id']}:{model}:{','.join(analyses)}:{did}:{bars[start].date}"
         cached = db.get_decisions(key)
         missing = sum(1 for b in bars[start:] if b.date not in cached)
-        decide = decider(a, bars, symbol, analyses)
+        decide = decider(a, bars, symbol, analyses, engine)
 
         def work(log, progress):
             ds = sa.decide_days(bars, start, cached, decide, log, progress,

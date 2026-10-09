@@ -88,11 +88,11 @@ def catalog() -> list[dict]:
         "tagline": "The real multi-agent framework: market, news, sentiment and fundamentals analysts → bull vs bear "
                    "debate → trader → risk debate → portfolio manager. Real NSE data from Yahoo Finance.",
         "source": {"name": "TradingAgents v0.5.2 by Tauric Research (Apache-2.0)", "url": TA_URL},
-        "fidelity": ("Original TradingAgents code, reviewed and approved, running in its own environment on your local AI. "
-                     "Macro data (FRED) is skipped: no API key."
+        "fidelity": ("Original TradingAgents code, reviewed and approved, running in its own environment on the AI you "
+                     "choose (local by default). Macro data (FRED) is skipped: no API key."
                      if installed else "Not installed on this computer."),
         "analyses": TA_ANALYSES, "available": installed,
-        "speed": "about 10 min per trading day on local Qwen",
+        "speed": "about 10 min per trading day on local Qwen; faster on a cloud AI",
     }, {
         "id": "tradingagents", "kind": "ai-team", "title": "TradingAgents Analyst Team",
         "tagline": "Market analyst → bull vs bear debate → trader & risk manager decide BUY / SELL / HOLD each day.",
@@ -293,6 +293,51 @@ TA_ANALYSES = [
      "detail": "Financial statements (SEC EDGAR for US, Yahoo for others)."},
 ]
 TA_MAX_DAYS = 5
+# Which AI runs the original TradingAgents. Cloud engines get ONLY their own key (set by the user as an environment
+# variable before starting Purple); every other *_API_KEY is still stripped. Paid engines need explicit confirmation
+# per run. Free-tier limits and prices are third-party / list figures checked 3 Oct 2026 — recheck before relying on them.
+TA_ENGINES = [
+    {"id": "local", "label": "Local Qwen (free, on this computer)", "provider": "ollama", "key_env": None,
+     "paid": False, "quick": None, "deep": None, "minutes": (10, 20),
+     "note": "Private and free. 8B model: weaker analysis, ~10 min per day."},
+    {"id": "gemini-flash", "label": "Google Gemini Flash (free tier)", "provider": "google", "key_env": "GOOGLE_API_KEY",
+     "paid": False, "quick": "gemini-3.8-flash", "deep": "gemini-3.8-flash", "minutes": (2, 10),
+     "note": "Free tier: rate-limited (hundreds of requests/day reported); Google may use free-tier prompts to improve "
+             "its products. Only public prices/news are sent."},
+    {"id": "gemini-pro", "label": "Gemini Pro managers + Flash analysts (free tier)", "provider": "google",
+     "key_env": "GOOGLE_API_KEY", "paid": False, "quick": "gemini-3.8-flash", "deep": "gemini-3.1-pro-preview",
+     "minutes": (3, 15),
+     "note": "Pro's free quota is small (~25–50 requests/day reported) and may not include this preview model; "
+             "a run can stop on a quota error."},
+    {"id": "claude-opus", "label": "Claude Opus 5.5 (paid API)", "provider": "anthropic", "key_env": "ANTHROPIC_API_KEY",
+     "paid": True, "quick": "claude-opus-5-5", "deep": "claude-opus-5-5", "effort": "high", "minutes": (2, 10),
+     "cost_per_day": (0.60, 1.00),
+     "note": "Billed to Anthropic API credits (not a Claude.ai subscription). Estimate ~$0.60–1.00 per day with "
+             "2 analysts at list price $4/$20 per 1M tokens; real usage is shown after each day."},
+]
+
+
+def ta_engine(engine_id: str) -> dict | None:
+    return next((e for e in TA_ENGINES if e["id"] == engine_id), None)
+
+
+def ta_engines(local_ok: bool) -> list[dict]:
+    """Engines with availability; never reveals key values, only whether the variable is set."""
+    out = []
+    for e in TA_ENGINES:
+        ok = local_ok if e["key_env"] is None else bool(os.environ.get(e["key_env"]))
+        why = "" if ok else ("Local AI is offline." if e["key_env"] is None
+                             else f"Set {e['key_env']} in your environment, then restart Purple.")
+        out.append({k: e[k] for k in ("id", "label", "paid", "note", "minutes")}
+                   | {"cost_per_day": e.get("cost_per_day"), "available": ok, "why": why})
+    return out
+
+
+def ta_engine_args(engine: dict, local_model: str) -> list[str]:
+    if engine["provider"] == "ollama":
+        return ["--provider", "ollama", "--model", local_model]
+    args = ["--provider", engine["provider"], "--quick", engine["quick"], "--deep", engine["deep"]]
+    return args + (["--effort", engine["effort"]] if engine.get("effort") else [])
 
 
 def ta_python() -> Path:
@@ -313,8 +358,10 @@ def _ta_process(args: list[str], on_event, timeout_s: float) -> dict:
     env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1",
            "TRADINGAGENTS_RESULTS_DIR": str(TA_HOME / "logs"), "TRADINGAGENTS_CACHE_DIR": str(TA_HOME / "cache"),
            "TRADINGAGENTS_MEMORY_LOG_PATH": str(TA_HOME / "memory" / "trading_memory.md")}
-    for k in [k for k in env if k.endswith("_API_KEY")]:
-        env.pop(k)  # the approved agent runs on the local model only; never hand it API keys
+    provider = args[args.index("--provider") + 1] if "--provider" in args else "ollama"
+    keep = next((e["key_env"] for e in TA_ENGINES if e["provider"] == provider and e["key_env"]), None)
+    for k in [k for k in env if k.endswith("_API_KEY") and k != keep]:
+        env.pop(k)  # hand the agent only the key of the engine the user chose for this run, never any other
     proc = subprocess.Popen([str(ta_python()), str(TA_RUNNER), *args], cwd=str(TA_DIR), env=env,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                             errors="replace")
@@ -357,21 +404,28 @@ def ta_prices(symbol: str, period: str = "2y") -> list[Bar]:
     return [Bar(*row) for row in ev["bars"]]
 
 
-def ta_decider(bars: list[Bar], symbol: str, analysts: list[str], model: str):
+def ta_decider(bars: list[Bar], symbol: str, analysts: list[str], model: str, engine: dict | None = None):
     ticker = nse_ticker(symbol)
+    engine = engine or TA_ENGINES[0]
 
     def decide(t, holding, log):
         def on_event(ev):
             log(ev.get("who", "step"), ev.get("text", ""))
-        ev = _ta_process(["--ticker", ticker, "--date", bars[t].date, "--analysts", ",".join(analysts), "--model", model],
-                         on_event, 45 * 60)
+        ev = _ta_process(["--ticker", ticker, "--date", bars[t].date, "--analysts", ",".join(analysts),
+                          *ta_engine_args(engine, model)], on_event, 45 * 60)
         action, notes = ev["action"], []
+        usage = ev.get("usage") or {}
+        if usage.get("calls"):
+            notes.append(f"AI: {engine['label']} · {usage['calls']} calls · {usage.get('input_tokens', 0):,} input / "
+                         f"{usage.get('output_tokens', 0):,} output tokens.")
         if action == "BUY" and holding:
-            action, notes = "HOLD", [f"TradingAgents rated {ev['rating']} while already holding: kept the position."]
+            action = "HOLD"
+            notes.insert(0, f"TradingAgents rated {ev['rating']} while already holding: kept the position.")
         elif action == "SELL" and not holding:
-            action, notes = "HOLD", [f"TradingAgents rated {ev['rating']} while flat: no shorting, so no trade."]
+            action = "HOLD"
+            notes.insert(0, f"TradingAgents rated {ev['rating']} while flat: no shorting, so no trade.")
         reports = ev.get("reports", {})
-        return {"action": action, "confidence": 0.0, "rating": ev["rating"],
+        return {"action": action, "confidence": 0.0, "rating": ev["rating"], "engine": engine["id"], "usage": usage,
                 "reason": (reports.get("final_trade_decision") or "")[:1500],
                 "bull": ev.get("bull", ""), "bear": ev.get("bear", ""), "notes": notes,
                 "report": "\n\n".join(f"## {k}\n{v}" for k, v in reports.items() if v)[:20000]}

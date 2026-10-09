@@ -110,3 +110,68 @@ def test_original_tradingagents_bridge(monkeypatch):
     out = c.get("/api/superagent/export", params={"agent_id": "tradingagents-original", "symbol": "RELIANCE"}).json()
     compile(out["code"], "ta.py", "exec")
     assert "RELIANCE.NS" in out["code"] and "DRY_RUN = True" in out["code"]
+
+
+def test_ta_cloud_engine_choice(monkeypatch):
+    """Cloud engines: key must be set, paid ones need explicit confirmation, runner gets the cloud models."""
+    bars = synthetic_bars(300)
+    calls = []
+
+    def fake_process(args, on_event, timeout_s):
+        if "--prices" in args:
+            return {"event": "prices", "bars": [[b.date, b.open, b.high, b.low, b.close, b.volume] for b in bars]}
+        calls.append(args)
+        return {"event": "result", "rating": "Hold", "action": "HOLD", "reports": {}, "bull": "", "bear": "",
+                "usage": {"calls": 18, "input_tokens": 60000, "output_tokens": 9000}}
+
+    monkeypatch.setattr(sa, "_ta_process", fake_process)
+    monkeypatch.setattr(sa, "ta_installed", lambda: True)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    c = TestClient(create_app(store=Store(":memory:"), provider=TeamProvider()))
+    body = {"agent_id": "tradingagents-original", "symbol": "TCS", "days": 1, "analyses": ["market"]}
+
+    engines = {e["id"]: e for e in next(a for a in c.get("/api/superagent/agents").json()
+                                        if a["id"] == "tradingagents-original")["engines"]}
+    assert engines["local"]["available"] and not engines["claude-opus"]["available"]
+    assert "ANTHROPIC_API_KEY" in engines["claude-opus"]["why"]
+    assert c.post("/api/superagent/run", json=body | {"engine": "claude-opus", "confirm_paid": True}).status_code == 503
+    assert c.post("/api/superagent/run", json=body | {"engine": "nope"}).status_code == 422
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-not-a-real-key")
+    assert c.post("/api/superagent/run", json=body | {"engine": "claude-opus"}).status_code == 402  # not confirmed
+    r = c.post("/api/superagent/run", json=body | {"engine": "claude-opus", "confirm_paid": True})
+    assert r.status_code == 200, r.text
+    j = wait(c, r.json()["job"]["id"])
+    assert j["status"] == "done", j["error"]
+    args = calls[-1]
+    assert args[args.index("--provider") + 1] == "anthropic" and args[args.index("--deep") + 1] == "claude-opus-5-5"
+    assert "--model" not in args
+    assert any("18 calls" in n for n in j["result"]["decisions"][0]["notes"])
+
+
+def test_ta_process_passes_only_the_chosen_key(monkeypatch):
+    seen = {}
+
+    class FakeProc:
+        def __init__(self):
+            self.stdout = iter(['{"event": "result", "rating": "Hold"}\n'])
+
+        def wait(self):
+            return 0
+
+        def kill(self):
+            pass
+
+    def fake_popen(cmd, **kw):
+        seen.update(kw["env"])
+        return FakeProc()
+
+    monkeypatch.setattr(sa.subprocess, "Popen", fake_popen)
+    for k, v in {"ANTHROPIC_API_KEY": "a", "GOOGLE_API_KEY": "g", "OPENAI_API_KEY": "o"}.items():
+        monkeypatch.setenv(k, v)
+    sa._ta_process(["--ticker", "X.NS", "--provider", "google"], lambda e: None, 5)
+    assert seen.get("GOOGLE_API_KEY") == "g" and "ANTHROPIC_API_KEY" not in seen and "OPENAI_API_KEY" not in seen
+    seen.clear()
+    sa._ta_process(["--ticker", "X.NS", "--provider", "ollama"], lambda e: None, 5)
+    assert not [k for k in seen if k.endswith("_API_KEY")]

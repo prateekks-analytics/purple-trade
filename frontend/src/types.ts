@@ -133,6 +133,17 @@ export interface Template { id: string; title: string; blurb: string; strategy: 
 
 export interface Analysis { id: string; label: string; available: boolean; detail: string }
 
+export interface TaEngine {
+  id: string
+  label: string
+  paid: boolean
+  note: string
+  minutes: [number, number]
+  cost_per_day: [number, number] | null
+  available: boolean
+  why: string
+}
+
 export interface SuperAgentInfo {
   id: string
   kind: 'ai-team' | 'ta-original' | 'rules' | 'research'
@@ -143,6 +154,7 @@ export interface SuperAgentInfo {
   analyses: Analysis[]
   available: boolean
   speed: string
+  engines?: TaEngine[]
   strategy?: Strategy
   describe?: NonNullable<Review['describe']>
 }

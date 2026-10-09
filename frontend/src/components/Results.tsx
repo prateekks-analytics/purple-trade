@@ -70,6 +70,7 @@ const tone = (v: number | null | undefined) => (v === null || v === undefined ? 
 
 export function Results({ result, running, error }: { result: BacktestResult | null; running: boolean; error: string | null }) {
   const [showAll, setShowAll] = useState(false)
+  const [tab, setTab] = useState<'equity' | 'price' | 'trades'>('equity')
 
   const view = useMemo(() => {
     if (!result) return null
@@ -111,54 +112,57 @@ export function Results({ result, running, error }: { result: BacktestResult | n
       </div>
 
       <div className="chart-card">
-        <div className="chart-title">Account value</div>
-        <LineChart dates={view.dates} ariaLabel="Account value over time, strategy versus buy and hold"
-          series={[
-            { key: 's', label: 'This strategy', color: 'var(--series-1)', values: view.equity },
-            { key: 'b', label: 'Buy & hold', color: 'var(--series-2)', values: view.bh, dashed: true },
-          ]}
-          baseline={m.start_equity}
-          format={v => fmtMoney(v)} />
-      </div>
-
-      <div className="chart-card">
-        <div className="chart-title">Price with trades <span className="legend-inline"><span className="mk buy">▲</span> buy <span className="mk sell">▼</span> sell</span></div>
-        <LineChart dates={view.dates} ariaLabel="Closing price with buy and sell markers"
-          series={[{ key: 'c', label: 'Close', color: 'var(--series-1)', values: view.close }]}
-          markers={view.markers} height={220}
-          format={v => v.toLocaleString('en-IN', { maximumFractionDigits: 0 })} />
-      </div>
-
-      <div className="trades">
-        <div className="chart-title">Every trade, and why</div>
-        {trades.length === 0 ? (
+        <div className="chart-tabs" role="tablist" aria-label="Result views">
+          {([['equity', 'Account value'], ['price', 'Price & trades'], ['trades', `Trades (${trades.length})`]] as const).map(([k, label]) => (
+            <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>
+          ))}
+          {tab === 'price' && <span className="legend-inline"><span className="mk buy">▲</span> buy <span className="mk sell">▼</span> sell</span>}
+        </div>
+        {tab === 'equity' && (
+          <LineChart dates={view.dates} ariaLabel="Account value over time, strategy versus buy and hold"
+            series={[
+              { key: 's', label: 'This strategy', color: 'var(--series-1)', values: view.equity },
+              { key: 'b', label: 'Buy & hold', color: 'var(--series-2)', values: view.bh, dashed: true },
+            ]}
+            baseline={m.start_equity}
+            format={v => fmtMoney(v)} />
+        )}
+        {tab === 'price' && (
+          <LineChart dates={view.dates} ariaLabel="Closing price with buy and sell markers"
+            series={[{ key: 'c', label: 'Close', color: 'var(--series-1)', values: view.close }]}
+            markers={view.markers}
+            format={v => v.toLocaleString('en-IN', { maximumFractionDigits: 0 })} />
+        )}
+        {tab === 'trades' && (trades.length === 0 ? (
           <p className="hint">{result.strategy_hash === 'ai-team'
             ? 'No trades. The team did not decide to buy in this period.'
             : `No trades. The buy rules never matched on this data${result.warmup_bars ? ` (the first ${result.warmup_bars} days are indicator warm-up)` : ''}.`}</p>
         ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Bought</th><th>Sold</th><th className="r">Qty</th><th className="r">P&L</th><th className="r">Days</th><th>Why it sold</th></tr>
-              </thead>
-              <tbody>
-                {shown.map((t, i) => (
-                  <tr key={i} className={t.open ? 'open-row' : ''}>
-                    <td title={t.entry_reason}><div>{t.entry_date}</div><div className="sub">@ {t.entry_price.toFixed(2)}</div></td>
-                    <td>{t.exit_date ? <><div>{t.exit_date}</div><div className="sub">@ {t.exit_price?.toFixed(2)}</div></> : <span className="badge">open</span>}</td>
-                    <td className="r">{t.qty}</td>
-                    <td className={`r ${tone(t.pnl)}`}><div>{fmtPct(t.pnl_pct)}</div><div className="sub">{fmtMoney(t.pnl)}</div></td>
-                    <td className="r">{t.bars_held}</td>
-                    <td className="reason">{t.exit_reason}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {trades.length > 12 && (
-          <button className="link-btn" onClick={() => setShowAll(s => !s)}>{showAll ? 'Show fewer' : `Show all ${trades.length} trades`}</button>
-        )}
+          <>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Bought</th><th>Sold</th><th className="r">Qty</th><th className="r">P&L</th><th className="r">Days</th><th>Why it sold</th></tr>
+                </thead>
+                <tbody>
+                  {shown.map((t, i) => (
+                    <tr key={i} className={t.open ? 'open-row' : ''}>
+                      <td title={t.entry_reason}><div>{t.entry_date}</div><div className="sub">@ {t.entry_price.toFixed(2)}</div></td>
+                      <td>{t.exit_date ? <><div>{t.exit_date}</div><div className="sub">@ {t.exit_price?.toFixed(2)}</div></> : <span className="badge">open</span>}</td>
+                      <td className="r">{t.qty}</td>
+                      <td className={`r ${tone(t.pnl)}`}><div>{fmtPct(t.pnl_pct)}</div><div className="sub">{fmtMoney(t.pnl)}</div></td>
+                      <td className="r">{t.bars_held}</td>
+                      <td className="reason">{t.exit_reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {trades.length > 12 && (
+              <button className="link-btn" onClick={() => setShowAll(s => !s)}>{showAll ? 'Show fewer' : `Show all ${trades.length} trades`}</button>
+            )}
+          </>
+        ))}
       </div>
 
       <p className="fineprint">

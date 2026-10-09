@@ -49,23 +49,45 @@ Options to decide (user has not chosen):
 3. Fewer analysts (market only ≈ half the time, weaker analysis).
 4. Pre-compute past days overnight in the background (decisions are already cached per day).
 
-**Findings 3 Oct 2026 (later session, measured, no code changed):**
-- GPU already in use: Ollama runs qwen3:8b on the RTX 4060 Laptop (8 GB), ~36 tok/s output,
-  ~1,700 tok/s prompt. Time is almost all output generation, not prompt reading.
-- Qwen3 "thinking" is ON in the TradingAgents run: Ollama generated 1,000–2,250 tokens per call while
-  the saved visible answers are ~250–700 tokens → ~60% of the 593 s is hidden reasoning.
-- Probe (same bear-analyst prompt, native `/api/chat`): think=on 30.5 s / 728 tokens; think=off
-  5.2 s / 201 tokens, answer similar length. Quality impact on full decisions UNVERIFIED.
-- Ollama context is 4,096 tokens (VRAM default); log shows 6 "context shift" events (half the
-  prompt discarded) — TradingAgents prompts reach ~4,000 tokens. Raising num_ctx to 8,192 (~+0.6 GB
-  KV) should fit in 8 GB; UNVERIFIED.
-- Recommended order: (a) free — think off + num_ctx 8192 for TA runs (est. ~2–4 min/day), (b) market
-  analyst only for backtests, (c) overnight precompute, (d) cloud only if quality is insufficient.
-- Cloud cost estimate (Anthropic list prices cached 25 Sep 2026, per 1M tokens in/out: Haiku 4.5
-  $1/$5, Sonnet 5.5 $2/$10, Opus 5.5 $4/$20; assumed ~50–80k input + ~8–12k output per trading day,
-  2 analysts): Haiku ≈ $0.10–0.14/day, Sonnet 5.5 ≈ $0.20–0.30/day, Opus 5.5 ≈ $0.40–0.55/day.
-  ESTIMATE — real token use not measured; needs API key + spend approval. TradingAgents ships an
-  Anthropic client, so it is a config switch in `ta_runner.py`.
+**Decision 3 Oct 2026 (user):** time (10–20 min/day) is acceptable; output quality matters; few runs at first →
+use a better cloud model. Free options compared: Gemini free tier fits (Flash ~500–1,500 req/day reported);
+Groq (8k tokens/min) and OpenRouter free (50 req/day) too tight. Limits are third-party reports — UNVERIFIED.
+
+**Implemented 3 Oct 2026 (step 1, no paid calls made):** Setup question "Which AI runs the agents?" for
+TradingAgents (original): Local Qwen (default) · Gemini Flash (free tier) · Gemini Pro managers + Flash analysts
+(free tier; Pro preview may not be free) · Claude Opus 5.5 (paid; needs a ticked cost-approval box, est.
+~$0.60–1.00/day, backend returns 402 without `confirm_paid`). Engine is available only when its key env var is
+set (`GOOGLE_API_KEY` / `ANTHROPIC_API_KEY`) — user sets it, then restarts the API. Only the chosen engine's key
+reaches the TradingAgents process; all other `*_API_KEY` still stripped. `ta_runner.py`: `--provider/--quick/
+--deep/--effort`; cloud runs send no temperature, `max_tokens` 16000, 8 retries; Claude structured output forced to
+native `json_schema` (Opus 5.5 rejects forced tool calls); per-day token usage counted and shown in decision notes.
+Cloud decisions cached under their own key (local cache unchanged). 55 backend tests pass; tsc clean; dist
+rebuilt; picker checked live on a temporary server (port 8781, `purple-api-check` in launch.json).
+NOT verified: any real Gemini/Claude call (no key set); paper-trade "Ask" for TA still uses local only.
+`GOOGLE_API_KEY` set by user (user env, setx); `purple-api` in launch.json now runs via PowerShell that copies
+GOOGLE_/ANTHROPIC_API_KEY from the saved user env at start (values never printed). Restarted 3 Oct: local +
+both Gemini engines available, Claude not (no key).
+**First Gemini run 3 Oct (RELIANCE, 1 day, Flash, market+news): FAILED after 142 s** — Google 429: free tier for
+`gemini-3.8-flash` is only **20 requests/day per model** on this key (resets ~midnight US Pacific); one TA day needs
+more than 20 calls. Blog figures (500–1,500/day) were wrong for this model. Options: spread calls across models
+(each has its own daily quota, e.g. flash-lite for analysts), enable Gemini billing, or use Claude/local.
+**User plan:** 4 Oct try split Gemini (flash-lite analysts + Flash managers; not yet built); Anthropic key later.
+Open idea (discussed, nothing built): improve small/low-context models via context discipline rather than CrewAI.
+**Professor (3 Oct, via user):** use these agents/models as provided, at least initially → keep TradingAgents
+(original) and CrewAI unmodified; small-model improvements only in Purple's own rebuild, later.
+**UI declutter 3 Oct:** warp animation has no text (streaks + candles only); SuperAgent ticker tape removed, compact
+header, agent picker split into "AI agents" / "Rule bots" (fits one 1366x800 screen, was 1206 px tall); Setup is a
+two-column form + sticky Summary (stock, analyst chips, days, AI model dropdown, capital | agent, time, cost, Run),
+fits one screen; Home 1839 → 864 px (short hero, upload button inside the idea box, short example chips, two
+columns: strategies (first 6 + "Show all") and Featured agents list). Checked at 1366 px and 375 px (no sideways
+scroll).
+**Light SuperAgent + remaining panels 3 Oct:** SuperAgent no longer forces the dark neon theme — uses the site's
+light theme (soft violet tint; follows OS dark mode like the rest). Backtest results (shared with the workspace)
+show charts and the trade table as tabs in one card (Account value · Price & trades · Trades) → SuperAgent backtest
+1208 → 845 px. Paper trade: one-line toolbar, logbook no longer repeats today's call ("Earlier days"). Deploy:
+short intro, broker notes collapsed. Checked at 1366 px and 375 px, no console errors.
+Progress label now names the chosen AI (was hard-coded "local AI, 30–60 s"). Next: one test day RELIANCE.NS 2026-10-01 (free Gemini first), compare
+with Qwen's Buy. Claude.ai subscription can't be used for the API (separate pay-as-you-go Console billing).
 
 ## Other pending user decisions
 

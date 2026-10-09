@@ -41,12 +41,15 @@ function AgentCard({ a, selected, onPick }: { a: SuperAgentInfo; selected: boole
     <button className={`sa-card ${a.kind} ${selected ? 'on' : ''}`} onClick={onPick} disabled={!a.available} aria-pressed={selected}>
       <span className="sa-card-kind">{KIND_LABEL[a.kind]}{a.available ? '' : ' · needs setup'}</span>
       <b>{a.title}</b>
-      <span className="sa-card-tag">{a.tagline}</span>
-      {a.describe && <span className="sa-rule-mini"><em>BUY</em> {a.describe.entry}<br /><em>SELL</em> {a.describe.exit}</span>}
-      <span className="sa-card-foot">
-        <a href={a.source.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>{a.source.name} ↗</a>
-        <span>{a.speed}</span>
-      </span>
+      {a.describe
+        ? <span className="sa-rule-mini"><em>BUY</em> {a.describe.entry}<br /><em>SELL</em> {a.describe.exit}</span>
+        : <span className="sa-card-tag" title={a.tagline}>{a.tagline}</span>}
+      {a.kind !== 'rules' && (
+        <span className="sa-card-foot">
+          <a href={a.source.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>{a.source.name.split(' (')[0]} ↗</a>
+          <span>{a.speed.split(';')[0]}</span>
+        </span>
+      )}
     </button>
   )
 }
@@ -76,14 +79,14 @@ function DecisionCards({ decisions, live }: { decisions: Pick<TeamDecision, 'dat
   )
 }
 
-function JobProgress({ job, label }: { job: Job; label: string }) {
+function JobProgress({ job, label, note = 'local AI, about 30–60 s per day' }: { job: Job; label: string; note?: string }) {
   const pct = job.total ? Math.round((job.done / job.total) * 100) : 100
   const last = job.log.slice(-4)
   return (
     <div className="sa-job" aria-live="polite">
       <div className="sa-job-head">
         <span className="sa-pulse" aria-hidden /> {label}: day {Math.min(job.done + 1, job.total)} of {job.total}
-        <span className="muted small"> · local AI, about 30–60 s per day</span>
+        <span className="muted small"> · {note}</span>
       </div>
       <div className="sa-bar"><i style={{ width: `${pct}%` }} /></div>
       <ul className="sa-feed">
@@ -141,19 +144,19 @@ function PaperPanel({ agent, datasetId, symbol, capital, analyses }: { agent: Su
 
   return (
     <div className="sa-paper">
-      <p className="hint">Paper trading starts <b>today</b> (the last day in your price data) with virtual money. Each new trading day the agent decides on the close and the order fills at the next open — no real orders, no broker.</p>
-      <div className="sa-row">
+      <div className="sa-row sa-toolbar">
         <button className="btn sa-go" disabled={busy || (isTA ? !symbol.trim() : !datasetId)} onClick={() => act(() => api.saPaperCreate(agent.id, isTA ? null : datasetId, capital, analyses, isTA ? symbol : undefined))}>
           Start paper account · {fmtMoney(capital)}
         </button>
         {mine.length > 0 && (
-          <label className="field-inline">Or open
-            <select value={view?.account.id ?? ''} onChange={e => e.target.value && act(() => api.saPaper(e.target.value))}>
-              <option value="">existing account…</option>
+          <label className="field-inline">
+            <select value={view?.account.id ?? ''} onChange={e => e.target.value && act(() => api.saPaper(e.target.value))} aria-label="Open an existing paper account">
+              <option value="">Open existing account…</option>
               {mine.map(a => <option key={a.id} value={a.id}>{a.name} · since {a.start_date}</option>)}
             </select>
           </label>
         )}
+        <span className="muted small sa-toolbar-note">Virtual money from the last day in the data · decide on close, fill next open · no real orders</span>
       </div>
       {err && <p className="error-text" role="alert">{err}</p>}
       {view && (
@@ -181,7 +184,9 @@ function PaperPanel({ agent, datasetId, symbol, capital, analyses }: { agent: Su
           {live && running && <JobProgress job={live} label="Team deciding" />}
           <p className="muted small">{view.data_note}</p>
           <Tiles r={view.result} />
-          {view.decisions.length > 0 && <><h3 className="sa-h3">Logbook</h3><DecisionCards decisions={[...view.decisions].reverse()} /></>}
+          {view.decisions.some(d => d.date !== view.today.date) && (
+            <><h3 className="sa-h3">Earlier days</h3><DecisionCards decisions={view.decisions.filter(d => d.date !== view.today.date).reverse()} /></>
+          )}
           {view.result.trades.length > 0 && (
             <div className="table-wrap"><table>
               <thead><tr><th>Bought</th><th>Sold</th><th className="r">Qty</th><th className="r">P&L</th><th>Why</th></tr></thead>
@@ -211,10 +216,9 @@ function DeployPanel({ agent }: { agent: { id: string; title: string; kind: stri
   }
   return (
     <div className="sa-deploy">
-      <p className="hint">Get a standalone Python file for <b>{agent.title}</b>. It reads a CSV of daily prices, prints today's BUY / SELL / HOLD
-        {agent.kind === 'ai-team' ? ' after the bull/bear debate (using your local Ollama model)' : ' using the exact rules you tested'}, and can hand the order to your broker.
-        It starts in <b>DRY_RUN</b> mode, so it only prints orders until you switch that off and add your own broker keys.</p>
-      <div className="sa-row">
+      <p className="muted small sa-intro">A standalone Python file that prints today's BUY / SELL / HOLD
+        {agent.kind === 'rules' ? ' from the exact rules you tested' : ' from the agent'}. Starts in <b>DRY_RUN</b>: it only prints orders until you switch that off and add your own broker keys.</p>
+      <div className="sa-row sa-toolbar">
         <label className="field-inline">NSE symbol <input value={symbol} onChange={e => setSymbol(e.target.value.toUpperCase())} className="sa-input" aria-label="NSE symbol" /></label>
         <button className="btn sa-go" onClick={gen}>Generate code</button>
         {out && <button className="btn ghost" onClick={download}>Download {out.filename}</button>}
@@ -222,15 +226,15 @@ function DeployPanel({ agent }: { agent: { id: string; title: string; kind: stri
       </div>
       {err && <p className="error-text">{err}</p>}
       {out && <pre className="sa-code">{out.code}</pre>}
-      <div className="sa-brokers">
-        <h3 className="sa-h3">Taking it to a broker in India</h3>
+      <details className="sa-brokers">
+        <summary>Taking it to a broker in India</summary>
         <ul>
           <li><b>Zerodha Kite Connect</b>: built into the file (set <code>BROKER = "zerodha"</code>, <code>KITE_API_KEY</code>, <code>KITE_ACCESS_TOKEN</code>). Paid API subscription.</li>
           <li><b>Angel One SmartAPI, Upstox, Dhan, Fyers</b> also offer order APIs. Replace <code>place_order()</code> with their client call.</li>
           <li>Automated retail orders go through SEBI's algo-trading framework via your broker (registration and controls may apply). Check with your broker first.</li>
           <li>Pricing and current API details are not verified by Purple Trade. Start with DRY_RUN and small quantities.</li>
         </ul>
-      </div>
+      </details>
     </div>
   )
 }
@@ -247,6 +251,8 @@ export function SuperAgent({ health, initialAgent, onExit }: {
   const [days, setDays] = useState(5)
   const [symbol, setSymbol] = useState('RELIANCE')
   const [capital, setCapital] = useState(100000)
+  const [engineId, setEngineId] = useState('local')
+  const [paidOk, setPaidOk] = useState(false)
   const [rulesResult, setRulesResult] = useState<BacktestResult | null>(null)
   const [job, setJob] = useState<Job<TeamResult> | null>(null)
   const [teamResult, setTeamResult] = useState<TeamResult | null>(null)
@@ -265,6 +271,11 @@ export function SuperAgent({ health, initialAgent, onExit }: {
   const isTeam = agent?.kind === 'ai-team' || isTA
   const maxDays = isTA ? 5 : 30
   const aiReady = Boolean(health?.ai.available)
+  const engines = agent?.engines ?? []
+  const engine = engines.find(e => e.id === engineId) ?? null
+  const nDays = Math.min(days, maxDays)
+  // older servers send no engine list: the original agent then runs on local Qwen as before
+  const engineReady = isTA && engines.length ? Boolean(engine?.available) && (!engine?.paid || paidOk) : aiReady
 
   useEffect(() => {
     if (!agent) return
@@ -279,7 +290,8 @@ export function SuperAgent({ health, initialAgent, onExit }: {
     setBusy(true); setErr(null); setRulesResult(null); setTeamResult(null); setJob(null)
     setStep(2)
     try {
-      const r = await api.saRun(agent.id, isTA ? null : datasetId, Math.min(days, maxDays), analyses, isTA ? symbol : undefined)
+      const r = await api.saRun(agent.id, isTA ? null : datasetId, Math.min(days, maxDays), analyses, isTA ? symbol : undefined,
+        isTA ? engineId : undefined, isTA && Boolean(engine?.paid) && paidOk)
       if (r.kind === 'rules') setRulesResult(r.result)
       else setJob(r.job)
     } catch (e) { setErr(errText(e)) } finally { setBusy(false) }
@@ -290,13 +302,10 @@ export function SuperAgent({ health, initialAgent, onExit }: {
 
   return (
     <div className="sa">
-      <div className="sa-tape" aria-hidden>
-        <div>{Array.from({ length: 2 }).map((_, k) => <span key={k}>NIFTY 50 · SENSEX · BANKNIFTY · RELIANCE · TCS · INFY · HDFCBANK · ICICIBANK · SBIN · ITC · LT · BHARTIARTL · AGENTS ONLINE · </span>)}</div>
-      </div>
       <header className="sa-head">
         <div>
-          <div className="sa-kicker">⚡ Trading SuperAgent</div>
-          <h1>{agent ? agent.title : 'Pick an agent. Test it. Paper trade it. Deploy it.'}</h1>
+          <div className="sa-kicker">Trading SuperAgent</div>
+          <h1>{agent ? agent.title : 'Choose an agent'}</h1>
         </div>
         <button className="btn ghost sa-exit" onClick={onExit}>Exit SuperAgent</button>
       </header>
@@ -313,98 +322,113 @@ export function SuperAgent({ health, initialAgent, onExit }: {
 
       {step === 0 && (
         <section className="sa-panel">
-          <h2>Featured agents</h2>
-          <p className="hint">Reviewed and approved agents. From the TradingAgents project (Tauric Research) recommended for the course: the original multi-agent framework, Purple's faster rebuild of it, and four rule bots built from its indicator guide.</p>
-          <div className="sa-grid">
-            {agents.map(a => <AgentCard key={a.id} a={a} selected={a.id === agentId} onPick={() => pick(a.id)} />)}
+          <div className="sa-sec-head"><h2>AI agents</h2><span className="muted small">Reviewed and approved · TradingAgents (Tauric Research)</span></div>
+          <div className="sa-grid ai">
+            {agents.filter(a => a.kind !== 'rules').map(a => <AgentCard key={a.id} a={a} selected={a.id === agentId} onPick={() => pick(a.id)} />)}
           </div>
-          <p className="muted small">SuperAgent runs only reviewed, pre-approved agents. To turn your own bot or document into rules, use “Upload a file” on the home page.</p>
+          <div className="sa-sec-head"><h2>Rule bots</h2><span className="muted small">From the TradingAgents indicator guide · instant backtests</span></div>
+          <div className="sa-grid rules">
+            {agents.filter(a => a.kind === 'rules').map(a => <AgentCard key={a.id} a={a} selected={a.id === agentId} onPick={() => pick(a.id)} />)}
+          </div>
         </section>
       )}
 
       {step === 1 && agent && (
-        <section className="sa-panel">
-          <h2>A few questions before we run {agent.title}</h2>
-          <div className="sa-q">
-            <div className="sa-qn">1</div>
-            <div className="sa-qbody">
-              <b>Which stock?</b>
-              <p className="hint">{isTA ? 'Type the NSE symbol. The agents fetch its real prices and news themselves.'
-                : 'Pick the price data to test on, or import an NSE daily CSV for the stock you want.'}</p>
+        <section className="sa-panel sa-setup">
+          <div className="sa-form">
+            <div className="sa-field">
+              <label htmlFor="sa-stock">Stock</label>
               {isTA ? (
-                <div className="sa-row">
-                  <label className="field-inline">NSE symbol <input className="sa-input" value={symbol} onChange={e => setSymbol(e.target.value.toUpperCase())} aria-label="NSE symbol" /></label>
-                  <span className="muted small">Real daily prices and news come from Yahoo Finance as {symbol.includes('.') ? symbol : `${symbol || '…'}.NS`} (unofficial source).</span>
+                <div>
+                  <input id="sa-stock" className="sa-input" value={symbol} onChange={e => setSymbol(e.target.value.toUpperCase())} />
+                  <span className="muted small"> Yahoo Finance · {symbol.includes('.') ? symbol : `${symbol || '…'}.NS`}</span>
                 </div>
               ) : (
                 <DataPicker datasets={datasets} value={datasetId} onChange={setDatasetId} onUploaded={d => { setDatasets(x => [d, ...x.filter(y => y.id !== d.id)]); setDatasetId(d.id) }} />
               )}
             </div>
-          </div>
-          {isTeam ? (
-            <>
-              <div className="sa-q">
-                <div className="sa-qn">2</div>
-                <div className="sa-qbody">
-                  <b>Which analyses should the team use?</b>
-                  <div className="sa-checks">
-                    {(agent as SuperAgentInfo).analyses.map(x => (
-                      <label key={x.id} className={x.available ? '' : 'off'} title={x.detail}>
-                        <input type="checkbox" disabled={!x.available || (!isTA && x.id === 'market') || (analyses.length === 1 && analyses.includes(x.id))} checked={analyses.includes(x.id)}
-                          onChange={e => setAnalyses(a => e.target.checked ? [...a, x.id] : a.filter(y => y !== x.id))} />
-                        <span><b>{x.label}</b><br /><span className="muted small">{x.detail}</span></span>
-                      </label>
-                    ))}
+            {isTeam ? (
+              <>
+                <div className="sa-field">
+                  <span className="sa-label">Analysts</span>
+                  <div className="sa-chips">
+                    {(agent as SuperAgentInfo).analyses.map(x => {
+                      const on = analyses.includes(x.id)
+                      const fixed = (!isTA && x.id === 'market') || (on && analyses.length === 1)
+                      return (
+                        <button key={x.id} type="button" className={`sa-chip ${on ? 'on' : ''}`} aria-pressed={on}
+                          disabled={!x.available} title={x.detail}
+                          onClick={() => { if (!fixed) setAnalyses(a => on ? a.filter(y => y !== x.id) : [...a, x.id]) }}>
+                          {x.label.replace(' / technical', '').replace(' analyst', '')}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
-              </div>
-              <div className="sa-q">
-                <div className="sa-qn">3</div>
-                <div className="sa-qbody">
-                  <b>How many recent trading days to backtest?</b>
+                <div className="sa-field">
+                  <label htmlFor="sa-days">Days to backtest</label>
                   <div className="sa-row">
-                    <input type="range" min={1} max={maxDays} value={Math.min(days, maxDays)} onChange={e => setDays(+e.target.value)} aria-label="Days to backtest" />
-                    <span className="sa-days-n">{days} day{days > 1 ? 's' : ''}</span>
-                    <span className="muted small">{isTA
-                      ? `≈ ${Math.min(days, maxDays) * 10}–${Math.min(days, maxDays) * 20} min on local Qwen (measured ~10 min per day with 2 analysts; more analysts take longer)`
-                      : `≈ ${Math.max(1, Math.round(days * 0.75))}–${Math.round(days * 1.2) || 1} min on local Qwen (3 AI calls per day)`}</span>
+                    <input id="sa-days" type="range" min={1} max={maxDays} value={nDays} onChange={e => setDays(+e.target.value)} />
+                    <span className="sa-days-n">{nDays} day{nDays > 1 ? 's' : ''}</span>
                   </div>
                 </div>
-              </div>
-              {!aiReady && <p className="sa-err">The local AI is offline, so the analyst team can't run right now. Rule bots still work.</p>}
-              <p className="muted small">{(agent as SuperAgentInfo).fidelity}</p>
-            </>
-          ) : (
-            <div className="sa-q">
-              <div className="sa-qn">2</div>
-              <div className="sa-qbody">
-                <b>The rules this bot follows</b>
+                {isTA && engines.length > 0 && (
+                  <div className="sa-field">
+                    <label htmlFor="sa-engine">AI model</label>
+                    <div>
+                      <select id="sa-engine" className="sa-input" value={engineId} onChange={e => { setEngineId(e.target.value); setPaidOk(false) }}>
+                        {engines.map(e => <option key={e.id} value={e.id} disabled={!e.available}>{e.label}{e.available ? '' : ' — needs key'}</option>)}
+                      </select>
+                      <p className="muted small sa-note">{engine ? (engine.available ? engine.note : engine.why) : ''}</p>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="sa-field">
+                <span className="sa-label">Rules</span>
                 {'describe' in agent && agent.describe
                   ? <p className="sa-rules"><em>BUY</em> {agent.describe.entry}<br /><em>SELL</em> {agent.describe.exit}</p>
-                  : <p className="hint">Your agent's saved rules (latest version, or the draft if none is saved).</p>}
-                <p className="muted small">Backtested over the whole dataset; fills at the next day's open, fees and slippage included.</p>
+                  : <p className="muted small">Your agent's saved rules.</p>}
               </div>
-            </div>
-          )}
-          <div className="sa-q">
-            <div className="sa-qn">{isTeam ? 4 : 3}</div>
-            <div className="sa-qbody">
-              <b>Paper-trading capital</b>
-              <div className="sa-row"><span>₹</span><input type="number" className="sa-input" min={1000} step={1000} value={capital} onChange={e => setCapital(Math.max(1000, +e.target.value || 0))} aria-label="Paper capital" /></div>
+            )}
+            <div className="sa-field">
+              <label htmlFor="sa-cap">Paper capital</label>
+              <div className="sa-row"><span>₹</span><input id="sa-cap" type="number" className="sa-input" min={1000} step={1000} value={capital} onChange={e => setCapital(Math.max(1000, +e.target.value || 0))} /></div>
             </div>
           </div>
-          <div className="sa-row">
-            <button className="btn sa-go big" onClick={run} disabled={busy || (isTA ? !symbol.trim() : !datasetId) || (isTeam && !aiReady)}>⚡ Run backtest</button>
+
+          <aside className="sa-summary" aria-label="Run summary">
+            <h2>Summary</h2>
+            <dl>
+              <dt>Agent</dt><dd>{agent.title}</dd>
+              {isTeam && <><dt>Analysts</dt><dd>{analyses.length}</dd></>}
+              {isTA && <><dt>AI model</dt><dd>{engine?.label.split(' (')[0] ?? 'Local Qwen'}</dd></>}
+              <dt>Est. time</dt><dd>{isTA ? `${nDays * (engine?.minutes[0] ?? 10)}–${nDays * (engine?.minutes[1] ?? 20)} min`
+                : isTeam ? `${Math.max(1, Math.round(nDays * 0.75))}–${Math.max(1, Math.round(nDays * 1.2))} min` : 'Instant'}</dd>
+              <dt>Cost</dt><dd>{isTA && engine?.paid && engine.cost_per_day
+                ? `≈ $${(engine.cost_per_day[0] * nDays).toFixed(2)}–${(engine.cost_per_day[1] * nDays).toFixed(2)}` : 'Free'}</dd>
+            </dl>
+            {isTA && engine?.paid && engine.cost_per_day && (
+              <label className="sa-confirm">
+                <input type="checkbox" checked={paidOk} onChange={e => setPaidOk(e.target.checked)} />
+                <span>I approve this spend from my API credits (estimate; more analysts cost more).</span>
+              </label>
+            )}
+            {!isTA && isTeam && !aiReady && <p className="sa-err">Local AI is offline.</p>}
+            <button className="btn sa-go big" onClick={run} disabled={busy || (isTA ? !symbol.trim() : !datasetId) || (isTeam && !engineReady)}>Run backtest</button>
             <button className="link-btn" onClick={() => setStep(3)}>Skip to paper trading</button>
-          </div>
+            <p className="muted small sa-fine">{isTeam ? (agent as SuperAgentInfo).fidelity : "Fills at the next day's open; fees and slippage included."}</p>
+          </aside>
         </section>
       )}
 
       {step === 2 && agent && (
         <section className="sa-panel">
-          <h2>Backtest · {agent.title}</h2>
+          <h2 className="sa-step-h">Backtest</h2>
           {busy && <p className="hint">Starting…</p>}
-          {live && teamRunning && <JobProgress job={live} label="Analyst team working" />}
+          {live && teamRunning && <JobProgress job={live} label="Analyst team working"
+            note={isTA ? `${engine?.label ?? 'Local Qwen'}, about ${engine?.minutes[0] ?? 10}–${engine?.minutes[1] ?? 20} min per day` : undefined} />}
           {live && teamRunning && live.log.some(l => l.kind === 'manager') && (
             <p className="muted small">Decisions so far appear when the run finishes. Leave this tab open.</p>
           )}
@@ -412,7 +436,7 @@ export function SuperAgent({ health, initialAgent, onExit }: {
           {teamResult && (
             <>
               <Results result={teamResult} running={false} error={null} />
-              <h3 className="sa-h3">Day-by-day decisions</h3>
+              <h3 className="sa-h3">Decisions</h3>
               <DecisionCards decisions={[...teamResult.decisions].reverse()} />
             </>
           )}
@@ -427,15 +451,15 @@ export function SuperAgent({ health, initialAgent, onExit }: {
 
       {step === 3 && agent && (
         <section className="sa-panel">
-          <h2>Paper trading · {agent.title}</h2>
+          <h2 className="sa-step-h">Paper trading</h2>
           <PaperPanel agent={agent} datasetId={datasetId} symbol={symbol} capital={capital} analyses={analyses} />
-          <div className="sa-row sa-next"><button className="btn ghost" onClick={() => setStep(4)}>Deploy: get the code →</button></div>
+          <div className="sa-row sa-next"><button className="link-btn" onClick={() => setStep(4)}>Deploy: get the code →</button></div>
         </section>
       )}
 
       {step === 4 && agent && (
         <section className="sa-panel">
-          <h2>Deploy · {agent.title}</h2>
+          <h2 className="sa-step-h">Deploy</h2>
           <DeployPanel agent={agent} />
         </section>
       )}

@@ -71,8 +71,8 @@ export const api = {
 
   // ----- Trading SuperAgent -----
   saAgents: () => req<SuperAgentInfo[]>('/api/superagent/agents'),
-  saRun: (agent_id: string, dataset_id: string | null, days: number, analyses: string[], symbol?: string) =>
-    req<RunResponse>('/api/superagent/run', json('POST', { agent_id, dataset_id, days, analyses, symbol })),
+  saRun: (agent_id: string, dataset_id: string | null, days: number, analyses: string[], symbol?: string, engine = 'local', confirm_paid = false) =>
+    req<RunResponse>('/api/superagent/run', json('POST', { agent_id, dataset_id, days, analyses, symbol, engine, confirm_paid })),
   saJob: <R,>(id: string) => req<Job<R>>(`/api/superagent/jobs/${id}`),
   saPaperList: () => req<PaperAccount[]>('/api/superagent/paper'),
   saPaperCreate: (agent_id: string, dataset_id: string | null, capital: number, analyses: string[], symbol?: string) =>

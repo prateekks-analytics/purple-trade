@@ -1,9 +1,8 @@
 import { useEffect, useRef } from 'react'
 
-const TICKERS = ['NIFTY', 'RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'ITC', 'LT', 'BHARTIARTL', 'RSI', 'MACD', 'EMA', 'SMA', 'ATR', 'VWMA']
 const DURATION = 2100
 
-/** Full-screen "hyperspace into the market" transition. Decorative only: no prices shown are real. */
+/** Full-screen "hyperspace into the market" transition. Decorative only: no text, no real prices. */
 export function Warp({ onDone }: { onDone: () => void }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const done = useRef(onDone)
@@ -21,10 +20,6 @@ export function Warp({ onDone }: { onDone: () => void }) {
 
     const rand = (a: number, b: number) => a + Math.random() * (b - a)
     const stars = Array.from({ length: 520 }, () => ({ a: rand(0, Math.PI * 2), r: rand(0, 1), s: rand(0.4, 1.6), hue: Math.random() < 0.7 ? 265 : Math.random() < 0.5 ? 150 : 190 }))
-    const labels = Array.from({ length: 34 }, () => ({
-      a: rand(0, Math.PI * 2), r: rand(0.05, 0.4), s: rand(0.6, 1.3),
-      text: Math.random() < 0.5 ? TICKERS[Math.floor(rand(0, TICKERS.length))] : `${Math.random() < 0.6 ? '▲' : '▼'} ${rand(0.1, 4.9).toFixed(2)}%`,
-    }))
     const candles = Array.from({ length: 90 }, (_, i) => ({ x: i, o: rand(0.3, 0.7), up: Math.random() < 0.58, h: rand(0.04, 0.16) }))
 
     let raf = 0
@@ -49,18 +44,6 @@ export function Warp({ onDone }: { onDone: () => void }) {
         ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke()
       }
 
-      // flying tickers and percentages
-      ctx.textAlign = 'center'
-      for (const l of labels) {
-        l.r += speed * l.s * 0.9
-        if (l.r > 1.05) { l.r = rand(0.02, 0.1); l.a = rand(0, Math.PI * 2) }
-        const size = (10 + l.r * 34) * dpr
-        ctx.font = `700 ${size}px ui-monospace, Consolas, monospace`
-        ctx.fillStyle = l.text.startsWith('▼') ? `rgba(255,95,110,${Math.min(1, l.r * 2.2)})`
-          : l.text.startsWith('▲') ? `rgba(60,240,150,${Math.min(1, l.r * 2.2)})` : `rgba(200,185,255,${Math.min(0.9, l.r * 2)})`
-        ctx.fillText(l.text, cx + Math.cos(l.a) * l.r * R, cy + Math.sin(l.a) * l.r * R)
-      }
-
       // candlestick tape racing along the bottom
       const cw = 14 * dpr, base = H * 0.86, band = H * 0.12, shift = (now - t0) * 0.9 * dpr * (1 + t * 3)
       for (const c of candles) {
@@ -71,24 +54,6 @@ export function Warp({ onDone }: { onDone: () => void }) {
         ctx.fillRect(x + cw / 2 - dpr / 2, y - c.h * band * 0.5, dpr, c.h * band * 2)
       }
 
-      // title punch-in
-      if (t > 0.5) {
-        const k = Math.min(1, (t - 0.5) / 0.3)
-        const scale = 0.6 + 0.4 * (1 - Math.pow(1 - k, 3))
-        ctx.save()
-        ctx.translate(cx, cy)
-        ctx.scale(scale, scale)
-        ctx.shadowColor = 'rgba(150,110,255,0.95)'
-        ctx.shadowBlur = 40 * dpr
-        ctx.fillStyle = `rgba(255,255,255,${k})`
-        ctx.font = `800 ${Math.min(W / 11, 92 * dpr)}px Inter, "Segoe UI", system-ui, sans-serif`
-        ctx.fillText('TRADING SUPERAGENT', 0, 0)
-        ctx.shadowBlur = 0
-        ctx.font = `600 ${16 * dpr}px ui-monospace, Consolas, monospace`
-        ctx.fillStyle = `rgba(60,240,150,${k})`
-        ctx.fillText('AGENTS ONLINE · BACKTEST · PAPER TRADE · DEPLOY', 0, 46 * dpr)
-        ctx.restore()
-      }
       // final flash
       if (t > 0.86) {
         ctx.fillStyle = `rgba(235,228,255,${(t - 0.86) / 0.14 * 0.85})`
