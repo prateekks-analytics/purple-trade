@@ -92,7 +92,23 @@ npm install
 npm run build
 ```
 
-Optional AI: Ollama with `qwen3:8b` at 127.0.0.1:11434. Without it, everything works except chat drafting.
+### Use Google Gemini (free) — recommended for a quick start
+
+1. Get a free key at https://aistudio.google.com/apikey (Google account → "Create API key").
+2. In the `purple` folder, copy `.env.example` to `.env` and paste the key after `GOOGLE_API_KEY=`.
+   `.env` is ignored by git: **never put a real key in a committed file or on GitHub.**
+3. Start Purple (`Start Purple Trade.cmd`). The AI that drafts rules switches to Gemini, and Test a bot picks
+   "Google Gemini Flash (free tier)" for TradingAgents automatically.
+
+Free-tier notes: requests are rate-limited (a "limit reached" message means wait a minute), and Google may use
+free-tier prompts to improve its products — text you send to the AI goes to Google. Rule bots and backtests never
+use the AI.
+
+Alternative, fully offline: Ollama with `qwen3:8b` at 127.0.0.1:11434 (used when no Google key is set, or with
+`PURPLE_AI_PROVIDER=ollama`). Without any AI, everything works except drafting rules from text.
+
+The original TradingAgents (Test a bot → AI agents) also needs its own install in `external/TradingAgents`
+(not included in this repository); without it, that option shows "Not installed" and the rule bots still work.
 
 ## Stack
 

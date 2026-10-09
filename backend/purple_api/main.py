@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
 from . import agents, ai, superagent_routes
+from .envfile import load_env
 from .csvdata import CsvError, parse_csv
 from .describe import describe, validate
 from .engine import bars_hash, run_backtest, strategy_hash
@@ -31,6 +32,8 @@ class BacktestIn(BaseModel):
 
 
 def create_app(store: Store | None = None, provider=None) -> FastAPI:
+    if provider is None:  # real run (tests pass their own provider): read purple/.env first
+        load_env()
     app = FastAPI(title="Purple Trade", version="0.1.0")
     db = store or default_store()
     app.state.store = db

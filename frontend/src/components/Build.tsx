@@ -68,7 +68,7 @@ export function Build({ health, onOpen, onTest }: {
         <div className="compose-row">
           <p className="field-note">
             <span className={`status-dot ${aiReady ? 'on' : 'off'}`} aria-hidden />
-            {health ? (aiReady ? `Drafted by ${health.ai.model} on this computer. Free.` : 'The local AI is offline: you can still write rules by hand.') : 'Checking the local AI…'}
+            {health ? (aiReady ? (health.ai.provider === 'gemini' ? `Drafted by Google ${health.ai.model} (free tier). Your idea is sent to Google.` : `Drafted by ${health.ai.model} on this computer. Free.`) : `The AI is not available: ${health.ai.detail} You can still write rules by hand.`) : 'Checking the AI…'}
           </p>
           <div className="compose-actions">
             <input ref={fileRef} type="file" hidden aria-label="File to turn into rules"

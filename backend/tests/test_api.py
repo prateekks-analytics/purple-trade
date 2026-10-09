@@ -207,3 +207,71 @@ def test_store_survives_concurrent_reads(tmp_path):
     with ThreadPoolExecutor(8) as pool:
         out = list(pool.map(lambda k: db.get_strategy(ids[k % 8])["name"], range(400)))
     assert out == [f"s{k % 8}" for k in range(400)]
+
+
+def test_env_file_loads_without_overriding(tmp_path, monkeypatch):
+    from purple_api.envfile import load_env
+    f = tmp_path / ".env"
+    f.write_text("# comment\nPURPLE_T_A=one\nexport PURPLE_T_B='two'\nPURPLE_T_C=\nPURPLE_T_D=new\n", encoding="utf-8")
+    for k in ("PURPLE_T_A", "PURPLE_T_B", "PURPLE_T_C"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("PURPLE_T_D", "kept")
+    assert load_env(f) == ["PURPLE_T_A", "PURPLE_T_B"]
+    import os
+    assert os.environ["PURPLE_T_A"] == "one" and os.environ["PURPLE_T_B"] == "two" and os.environ["PURPLE_T_D"] == "kept"
+    for k in ("PURPLE_T_A", "PURPLE_T_B"):
+        monkeypatch.delenv(k)
+
+
+def test_provider_choice_and_gemini_request(monkeypatch):
+    import httpx
+    from purple_api.ai import providers as pv
+    monkeypatch.delenv("PURPLE_AI_PROVIDER", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    assert isinstance(pv.default_provider(), pv.OllamaProvider)
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    assert isinstance(pv.default_provider(), pv.GeminiProvider)
+    monkeypatch.setenv("PURPLE_AI_PROVIDER", "ollama")
+    assert isinstance(pv.default_provider(), pv.OllamaProvider)
+
+    seen = {}
+    def fake_post(url, json, timeout, headers):
+        seen.update(url=url, body=json, headers=headers)
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": '{"ok": true}'}]}}]})
+    monkeypatch.setattr(pv.httpx, "post", fake_post)
+    g = pv.GeminiProvider(model="gemini-x", api_key="k1")
+    out = g.complete("SYS", [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "yo"}])
+    assert out == '{"ok": true}' and seen["headers"] == {"x-goog-api-key": "k1"} and "k1" not in seen["url"]
+    assert seen["body"]["systemInstruction"]["parts"][0]["text"] == "SYS"
+    assert [c["role"] for c in seen["body"]["contents"]] == ["user", "model"]
+    assert g.status()["available"] and not pv.GeminiProvider(api_key="").status()["available"]
+
+
+def test_gemini_retries_then_falls_back(monkeypatch):
+    import httpx
+    from purple_api.ai import providers as pv
+    urls = []
+    def fake_post(url, json, timeout, headers):
+        urls.append(url)
+        if "main-model" in url:
+            return httpx.Response(503, json={"error": {"code": 503}})
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "{}"}]}}]})
+    monkeypatch.setattr(pv.httpx, "post", fake_post)
+    g = pv.GeminiProvider(model="main-model", api_key="k", fallback="spare-model", retry_wait=0)
+    assert g.complete("s", [{"role": "user", "content": "x"}]) == "{}"
+    assert [("main" if "main-model" in u else "spare") for u in urls] == ["main", "main", "spare"]
+
+
+def test_agents_route_with_gemini_drafting():
+    from fastapi.testclient import TestClient
+    from purple_api.main import create_app
+    from purple_api.store import Store
+
+    class FakeGemini:
+        name, model = "gemini", "gemini-x"
+        def status(self):
+            return {"provider": "gemini", "model": "gemini-x", "available": True, "detail": "test"}
+
+    c = TestClient(create_app(store=Store(":memory:"), provider=FakeGemini()))
+    r = c.get("/api/superagent/agents")
+    assert r.status_code == 200, r.text

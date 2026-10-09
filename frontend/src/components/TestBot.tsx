@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
-import type { BacktestResult, Dataset, Health, Job, Strategy, SuperAgentInfo, TeamResult } from '../types'
+import type { BacktestResult, Dataset, Job, Strategy, SuperAgentInfo, TeamResult } from '../types'
 import { fmtMoney } from '../lib/tree'
 import { DecisionLog, DownloadCode, errText, JobProgress, useJob } from './AgentBits'
 import { Assumptions, DataPicker, ResultDetail, VerdictPanel } from './Results'
@@ -31,8 +31,8 @@ const TA_COSTS = { fee_bps: 3, slippage_bps: 5 }
 export const stockName = (d: Dataset | null | undefined) =>
   d?.synthetic ? 'the sample stock' : d?.symbol ? d.symbol.replace(/\.NS$/, '') : 'the stock'
 
-export function TestBot({ health, initialBot, onPaperCreated, onBuild }: {
-  health: Health | null; initialBot?: string; onPaperCreated: (id: string) => void; onBuild: () => void
+export function TestBot({ initialBot, onPaperCreated, onBuild }: {
+  initialBot?: string; onPaperCreated: (id: string) => void; onBuild: () => void
 }) {
   const [bots, setBots] = useState<Bot[] | null>(null)
   const [botId, setBotId] = useState<string | null>(initialBot ?? null)
@@ -92,6 +92,11 @@ export function TestBot({ health, initialBot, onPaperCreated, onBuild }: {
   const dataset = datasets.find(d => d.id === datasetId) ?? null
   const stock = isAI ? symbol : stockName(dataset)
   const shown = result ?? teamResult
+
+  // Prefer the free Google Gemini engine when the person running the app has set a key.
+  useEffect(() => {
+    if (engines.some(e => e.id === 'gemini-flash' && e.available)) setEngineId('gemini-flash')
+  }, [engines.length])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const clear = () => { setResult(null); setTeamResult(null); setJob(null); setErr(null) }
   useEffect(clear, [botId, datasetId, symbol, days, engineId, analyses.join()])
@@ -259,7 +264,7 @@ export function TestBot({ health, initialBot, onPaperCreated, onBuild }: {
               <>
                 <p className="run-summary">
                   {isAI
-                    ? <>Ask {bot.title} to decide each of the last {days} trading day{days > 1 ? 's' : ''} for {symbol || '…'}. Expect about {minutes[0]}–{minutes[1]} minutes{cost ? `; estimated cost $${cost[0].toFixed(2)}–${cost[1].toFixed(2)} of API credit` : ', free on this computer'}.</>
+                    ? <>Ask {bot.title} to decide each of the last {days} trading day{days > 1 ? 's' : ''} for {symbol || '…'}. Expect about {minutes[0]}–{minutes[1]} minutes{cost ? `; estimated cost $${cost[0].toFixed(2)}–${cost[1].toFixed(2)} of API credit` : ', free'}.</>
                     : <>Replay {bot.title} over {dataset ? `${dataset.rows} trading days of ${stockName(dataset)} (${dataset.first_date} to ${dataset.last_date})` : 'the chosen prices'}. Takes a second, free.</>}
                 </p>
                 {isAI && cost && (
@@ -268,7 +273,7 @@ export function TestBot({ health, initialBot, onPaperCreated, onBuild }: {
                     <span>I approve spending up to about ${cost[1].toFixed(2)} of my API credit on this run.</span>
                   </label>
                 )}
-                {isAI && !health?.ai.available && engineId === 'local' && <p className="error-text">The local AI is offline. Start Ollama or pick a cloud model.</p>}
+                {isAI && engine && !engine.available && <p className="error-text">{engine.why}</p>}
                 <div className="run-row">
                   <button className="btn primary" onClick={run} disabled={!ready || busy || running}>{busy ? 'Starting…' : running ? 'Running…' : shown ? 'Run again' : 'Run backtest'}</button>
                 </div>

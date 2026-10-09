@@ -56,7 +56,7 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
   const decide = async () => {
     if (!view) return
     const slow = view.agent.kind === 'ta-original'
-    if (slow && !confirm(`The original TradingAgents needs about 10 minutes per trading day on the local AI (${view.pending_days.length} day${view.pending_days.length > 1 ? 's' : ''} pending). Start now?`)) return
+    if (slow && !confirm(`The original TradingAgents needs about 2–10 minutes per trading day on Google Gemini, or 10–20 on local Qwen (${view.pending_days.length} day${view.pending_days.length > 1 ? 's' : ''} pending). Start now?`)) return
     setErr(null)
     try { setJob((await api.saPaperDecide(view.account.id)).job) } catch (e) { setErr(errText(e)) }
   }

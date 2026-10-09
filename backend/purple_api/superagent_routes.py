@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from . import superagent as sa
+from .ai.providers import OllamaProvider
 from .describe import describe, validate
 from .engine import bars_hash, run_backtest
 from .schema import Strategy
@@ -35,6 +36,24 @@ class PaperIn(BaseModel):
 
 def register(app: FastAPI, db: Store):
     jobs = sa.Jobs()
+    _local: list = []
+
+    def local_ai():
+        """The Ollama model behind TradingAgents' 'Local Qwen' engine, even when drafting runs on Gemini."""
+        p = app.state.provider
+        if getattr(p, "name", "") != "gemini":
+            return p
+        if not _local:
+            _local.append(OllamaProvider())
+        return _local[0]
+
+    def default_ta_engine() -> dict:
+        """Gemini Flash when a Google key is set, else local Qwen (used where the user picks no engine)."""
+        avail = {e["id"] for e in sa.ta_engines(local_ai().status()["available"]) if e["available"]}
+        for eid in ("gemini-flash", "local"):
+            if eid in avail:
+                return sa.ta_engine(eid)
+        raise HTTPException(503, "No AI is available for TradingAgents: set GOOGLE_API_KEY or start Ollama.")
 
     def agent(agent_id: str) -> dict:
         if agent_id.startswith("version:"):  # a saved (immutable) strategy version acts as a rule bot
@@ -100,7 +119,7 @@ def register(app: FastAPI, db: Store):
         e = sa.ta_engine(engine_id)
         if not e:
             raise HTTPException(422, f"Unknown AI engine {engine_id!r}.")
-        info = next(x for x in sa.ta_engines(app.state.provider.status()["available"]) if x["id"] == e["id"])
+        info = next(x for x in sa.ta_engines(local_ai().status()["available"]) if x["id"] == e["id"])
         if not info["available"]:
             raise HTTPException(503, f"{e['label']} can't run: {info['why']}")
         if e["paid"] and not confirm_paid:
@@ -109,7 +128,7 @@ def register(app: FastAPI, db: Store):
 
     def decider(a: dict, bars, symbol: str, analyses: list[str], engine: dict | None = None):
         if a["kind"] == "ta-original":
-            return sa.ta_decider(bars, symbol, analyses, app.state.provider.model, engine)
+            return sa.ta_decider(bars, symbol, analyses, local_ai().model, engine)
         return sa.team_decider(bars, symbol, team_complete())
 
     @app.get("/api/superagent/agents")
@@ -120,7 +139,7 @@ def register(app: FastAPI, db: Store):
             if a.get("strategy"):
                 a["describe"] = describe(Strategy.model_validate(a["strategy"]))
             if a["kind"] == "ta-original":
-                a["engines"] = sa.ta_engines(app.state.provider.status()["available"])
+                a["engines"] = sa.ta_engines(local_ai().status()["available"])
             out.append(a)
         return out
 
@@ -153,6 +172,8 @@ def register(app: FastAPI, db: Store):
 
         if engine and engine["id"] != "local":
             model = f"{engine['id']}:{engine['quick']}/{engine['deep']}"  # separate decision cache per cloud engine
+        elif engine:
+            model = local_ai().model  # availability already checked by ta_engine_or_error
         else:
             model = model_or_503()
         if len(bars) < body.days + 30:
@@ -277,13 +298,15 @@ def register(app: FastAPI, db: Store):
         a = agent(p["agent_id"])
         if a["kind"] not in AI_KINDS:
             raise HTTPException(400, "Rule bots decide instantly; nothing to run.")
-        model_or_503()
+        engine = default_ta_engine() if a["kind"] == "ta-original" else None
+        if engine is None:
+            model_or_503()
         bars = account_bars(p)
         start = next(i for i, b in enumerate(bars) if b.date >= p["start_date"])
         key = f"paper:{pid}"
         cached = db.get_decisions(key)
         analyses = p.get("analyses") or ["market"]
-        do = decider(a, bars, p["symbol"] or "the stock", analyses)
+        do = decider(a, bars, p["symbol"] or "the stock", analyses, engine)
 
         def work(log, progress):
             sa.decide_days(bars, start, cached, do, log, progress, save=lambda d, x: db.save_decision(key, d, x))
@@ -306,7 +329,7 @@ def register(app: FastAPI, db: Store):
         if a["kind"] == "rules":
             code = sa.export_rules(a["strategy"], sym)
         elif a["kind"] == "ta-original":
-            code = sa.export_ta(sa.nse_ticker(sym), app.state.provider.model)
+            code = sa.export_ta(sa.nse_ticker(sym), local_ai().model)
         else:
             code = sa.export_team(sym, app.state.provider.model)
         return {"filename": f"{slug}_{re.sub(r'[^a-z0-9]+', '_', sym.lower())}.py", "code": code}

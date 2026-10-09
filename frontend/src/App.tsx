@@ -82,7 +82,7 @@ export default function App() {
         ) : route.page === 'paper' ? (
           <Paper accountId={route.id} onSelect={id => go(`#/paper/${id}`)} onTest={() => go('#/test')} />
         ) : (
-          <TestBot key={route.bot ?? 'none'} health={health} initialBot={route.bot}
+          <TestBot key={route.bot ?? 'none'} initialBot={route.bot}
             onPaperCreated={id => go(`#/paper/${id}`)} onBuild={() => go('#/build')} />
         )}
       </main>
