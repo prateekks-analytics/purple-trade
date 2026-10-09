@@ -1,6 +1,6 @@
 # Purple Trade — new-chat handoff (updated 9 October 2026)
 
-**START HERE in a new chat: section "Redesign decision" is the next job.**
+**START HERE: the redesign is DONE (9 Oct 2026). Read "Redesign — done" below; the older sections describe the pre-redesign UI.**
 
 Read this first, then `purple/README.md` (architecture, engine contract, SuperAgent, endpoints, commands).
 Root `CLAUDE.md` section 1 describes the OLD root app — superseded; do not extend or reuse it.
@@ -91,9 +91,33 @@ short intro, broker notes collapsed. Checked at 1366 px and 375 px, no console e
 Progress label now names the chosen AI (was hard-coded "local AI, 30–60 s"). Next: one test day RELIANCE.NS 2026-10-01 (free Gemini first), compare
 with Qwen's Buy. Claude.ai subscription can't be used for the API (separate pay-as-you-go Console billing).
 
+## Redesign — done (9 Oct 2026)
+
+One app, three sections in the top bar (hash routes): **Test a bot** `#/test[/<botId>]`, **Build your own** `#/build`
+(rule workspace `#/s/<id>`), **Paper accounts** `#/paper[/<id>]`. SuperAgent mode, warp, Analyst Team rebuild and
+CrewAI card are hidden (backend catalog unchanged; rebuild's paper accounts kept in DB, filtered from the list).
+Deploy is a small "Download code" link.
+- Test a bot = 4 numbered steps: choose (TradingAgents original / 4 rule bots / saved versions as `version:<vid>`)
+  → set up (price data or NSE symbol, analysts, days, AI model, stated assumptions) → run (time/cost estimate;
+  confirm dialog before TradingAgents runs) → verdict → "Start paper account" + Download code.
+- Verdict (`frontend/src/lib/verdict.ts`) is computed from the numbers only: beat/trailed/matched buy and hold or
+  "never traded", money sentence, 4 facts (return, worst fall from a peak vs holding, trades, time invested), and
+  "What this means" caveats (few trades, <1 year, losing-but-beating, worse on both counts, synthetic data).
+- Look: IBM Plex Sans + Newsreader (Google Fonts link in `index.html`; falls back offline), violet ink on cool paper,
+  light + dark tokens in `styles.css` (clean rewrite). Chart pair #4a3aa7/#eb6834 (dark #9085e9/#d95926) passed the
+  dataviz validator. Contrast checked (text ≥5:1; field borders 3.5:1+). Charts keyboard-readable (arrows).
+- Reviews run: design-critique, accessibility-review, ux-copy; fixes in 3ccc277.
+- Backend: saved versions run as rule bots (`agent_id=version:<vid>`, 15e564f); SQLite race fixed (rows fetched
+  inside the lock, 6b61d78). Tests: **57 passing**. Production UI rebuilt (`npm run build`) for the one-click launcher.
+- Screenshots: the in-app Browser pane could not render while the window was minimised; verified with headless
+  Edge over CDP (script was in the session scratchpad, not the repo).
+- Test data created during verification: paper account "MACD Momentum · SAMPLE" (synthetic, advanced 3 days).
+  Not deleted; delete it in Paper accounts if unwanted.
+- Not done: full TradingAgents run through the new UI (needs your OK, ~10–20 min); NVDA/VoiceOver test; 200% zoom.
+
 ## Redesign decision (9 Oct 2026, user)
 
-UI judged "too tacky to show the professor"; use cases "haphazard". Agreed plan (NOT STARTED). The user enabled
+UI judged "too tacky to show the professor"; use cases "haphazard". Agreed plan (DONE — see above). The user enabled
 Anthropic's `frontend-design` plugin on 9 Oct (takes effect in a new session). Tools to use:
 1. `frontend-design` skill — load it FIRST and build the redesign with it.
 2. Anthropic **Design** plugin (already enabled; skills `design:design-critique`, `design:accessibility-review`,
