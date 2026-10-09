@@ -54,6 +54,22 @@ def _id() -> str:
     return uuid.uuid4().hex[:12]
 
 
+class _Rows:
+    """Materialised query result with the cursor methods the store uses."""
+
+    def __init__(self, rows: list):
+        self._rows = rows
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self) -> list:
+        return self._rows
+
+    def __iter__(self):
+        return iter(self._rows)
+
+
 class Store:
     def __init__(self, path: str | Path):
         self.path = str(path)
@@ -70,10 +86,13 @@ class Store:
             self._db.commit()
 
     def _q(self, sql: str, args=()):
+        # Rows are read while the lock is held: the connection is shared across request threads, and a
+        # cursor fetched after release can return another thread's rows (seen as sporadic 500s).
         with self._lock:
             cur = self._db.execute(sql, args)
+            rows = cur.fetchall()
             self._db.commit()
-            return cur
+            return _Rows(rows)
 
     # ----- strategies -----
     def create_strategy(self, name: str) -> dict:

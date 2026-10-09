@@ -197,3 +197,13 @@ def test_code_percent_check_flags_misread_take_profit():
     s = Strategy.model_validate({**GOOD, "exit": exit_})
     warn = code_percent_checks(code, s)
     assert len(warn) == 1 and "5%" in warn[0]
+
+
+def test_store_survives_concurrent_reads(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from purple_api.store import Store
+    db = Store(tmp_path / "t.sqlite3")
+    ids = [db.create_strategy(f"s{i}")["id"] for i in range(8)]
+    with ThreadPoolExecutor(8) as pool:
+        out = list(pool.map(lambda k: db.get_strategy(ids[k % 8])["name"], range(400)))
+    assert out == [f"s{k % 8}" for k in range(400)]
