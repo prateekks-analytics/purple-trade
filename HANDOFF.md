@@ -1,4 +1,6 @@
-# Purple Trade — new-chat handoff (3 October 2026, end of day)
+# Purple Trade — new-chat handoff (updated 9 October 2026)
+
+**START HERE in a new chat: section "Redesign decision" is the next job.**
 
 Read this first, then `purple/README.md` (architecture, engine contract, SuperAgent, endpoints, commands).
 Root `CLAUDE.md` section 1 describes the OLD root app — superseded; do not extend or reuse it.
@@ -91,14 +93,27 @@ with Qwen's Buy. Claude.ai subscription can't be used for the API (separate pay-
 
 ## Redesign decision (9 Oct 2026, user)
 
-UI judged "too tacky to show the professor"; use cases "haphazard". Agreed plan (not started — waiting for the user to
-enable Anthropic's `frontend-design` plugin, then build with that skill loaded):
+UI judged "too tacky to show the professor"; use cases "haphazard". Agreed plan (NOT STARTED). The user enabled
+Anthropic's `frontend-design` plugin on 9 Oct (takes effect in a new session). Tools to use:
+1. `frontend-design` skill — load it FIRST and build the redesign with it.
+2. Anthropic **Design** plugin (already enabled; skills `design:design-critique`, `design:accessibility-review`,
+   `design:ux-copy`, `design:design-system`) — use AFTER building: critique the live screens, fix, accessibility
+   pass (contrast, keyboard, reduced motion), plain-English copy for results.
+3. `dataviz` skill for charts (equity curve, price + trades).
+Audience: the professor (Prof. Ashok Harnal) — must look professional, calm, credible; no gimmicks.
 - One app, no separate SuperAgent mode/warp. Three sections: **Test a bot** (TradingAgents original from GitHub +
   4 rule bots + saved strategies → backtest → plain-English verdict → paper trade), **Build your own** (idea/file →
   rules), **Paper accounts**.
 - Hide Purple's "Analyst Team" rebuild and the not-runnable CrewAI card; Deploy becomes a small "Download code" link.
-- Backtest and paper trading must be deliberate, easy to follow, and easy to interpret (explain the result).
-- Baseline before redesign: commit 82579f0.
+- Backtest and paper trading must be deliberate, easy to follow, and easy to interpret (explain the result):
+  e.g. clear steps (what / on which stock & period / costs assumed → run → verdict), a plain-English verdict card
+  ("beat / lagged buy & hold by X%, worst drop Y%, Z trades, what that means"), key assumptions stated.
+- Keep working: backend endpoints, TradingAgents engine choice (Local Qwen / Gemini / Claude with paid approval),
+  rule editor, versions, uploads, paper accounts, all 55 backend tests.
+- Restore point: commit 82579f0 (pre-redesign UI). Plan recorded in 37daa1e.
+- Main frontend files: `frontend/src/App.tsx`, `components/{Home,SuperAgent,Workspace,Results,RuleEditor,Chat,
+  LineChart,GraphView,Warp}.tsx`, `styles.css` (one large file; later "declutter"/"light SuperAgent" blocks override
+  earlier rules — a clean rewrite is welcome).
 
 ## Other pending user decisions
 
@@ -108,16 +123,18 @@ enable Anthropic's `frontend-design` plugin, then build with that skill loaded):
 
 ## Git
 
-- `master`: 3fe281a initial · da3f726 new build · 5f289eb egg-info · 1b82b56 agent upload + SuperAgent ·
-  a621e41 ignore purple/external · cba185a decision: curated SuperAgent · 8da0e0e single upload +
-  original TradingAgents. This handoff rewrite is uncommitted unless committed after writing.
+- `master` latest: 82579f0 cloud engine choice + decluttered light UI · 37daa1e redesign plan (+ this handoff
+  update). Earlier: 8da0e0e single upload + original TradingAgents, a023be6 money-ideas handoff (unrelated).
 - No global git identity; commits use one-off `git -c user.name="Prateek" -c user.email="prateeksinghamu@gmail.com"`.
-- Commit only when the user asks.
+- **Auto-commit (user rule since 3 Oct):** commit after each finished change, local only, never push, stage files
+  explicitly, check for secrets first.
 
 ## Run
 
 - One click: `purple\Start Purple Trade.cmd` → http://127.0.0.1:8780.
-- Dev: `.claude/launch.json` → `purple-api` (8780; restart after backend edits) and `purple-web` (5173).
+- Dev: `.claude/launch.json` → `purple-api` (8780; runs via PowerShell that loads GOOGLE_/ANTHROPIC_API_KEY from
+  the user env; restart after backend edits) and `purple-web` (5173). Open **http://localhost:5173** (Vite listens on
+  IPv6 only; 127.0.0.1:5173 fails). Servers stop when a chat ends — start them again with preview_start.
 - Ollama qwen3:8b at 127.0.0.1:11434. DB `purple/backend/data/purple.sqlite3` (test paper account
   "TradingAgents Analyst Team · SAMPLE" exists). TradingAgents data/logs: `purple/external/ta_home/`.
 
