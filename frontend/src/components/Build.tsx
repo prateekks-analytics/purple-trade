@@ -103,6 +103,7 @@ export function Build({ health, onOpen, onTest }: {
                   <td className="sub">{s.versions ? `${s.versions} saved version${s.versions > 1 ? 's' : ''}` : 'Draft, not saved'}</td>
                   <td className="sub">{new Date(s.updated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                   <td className="r row-actions">
+                    <button className="btn quiet sm" onClick={() => onOpen(s.id)} aria-label={`Open ${s.name}`}>Open</button>
                     {s.versions > 0 && <button className="btn quiet sm" onClick={() => test(s)}>Test latest version</button>}
                     <button className="link-btn danger" onClick={() => remove(s)} aria-label={`Delete ${s.name}`}>Delete</button>
                   </td>

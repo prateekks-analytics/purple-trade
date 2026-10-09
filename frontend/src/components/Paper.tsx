@@ -5,6 +5,7 @@ import { fmtMoney, fmtPct } from '../lib/tree'
 import { DecisionLog, DownloadCode, errText, JobProgress, useJob } from './AgentBits'
 import { ResultDetail } from './Results'
 
+const HIDDEN = new Set(['tradingagents'])
 const CALL = { BUY: 'Buy', SELL: 'Sell', HOLD: 'Hold' } as const
 
 /** Plain-English sentence about what the account holds right now. */
@@ -33,7 +34,8 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
   const [err, setErr] = useState<string | null>(null)
   const [job, setJob] = useState<Job | null>(null)
 
-  const refreshList = () => api.saPaperList().then(setAccounts).catch(e => setErr(errText(e)))
+  // Accounts of the hidden Analyst Team rebuild stay in the database but are not shown.
+  const refreshList = () => api.saPaperList().then(a => setAccounts(a.filter(x => !HIDDEN.has(x.agent_id)))).catch(e => setErr(errText(e)))
   useEffect(() => { refreshList() }, [])
 
   useEffect(() => {
@@ -102,7 +104,7 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
               </li>
             ))}
           </ul>
-          <button className="btn quiet" onClick={onTest}>Open another from Test a bot</button>
+          <button className="btn quiet" onClick={onTest}>Test another bot</button>
         </nav>
 
         <div className="account">
@@ -145,7 +147,7 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
                   <div className="fact"><dt>Account value</dt><dd className="fact-value">{fmtMoney(m.end_equity)}</dd><dd className="fact-note">Started at {fmtMoney(m.start_equity)}</dd></div>
                   <div className="fact"><dt>Return so far</dt><dd className={`fact-value ${m.total_return_pct > 0 ? 'pos' : m.total_return_pct < 0 ? 'neg' : ''}`}>{fmtPct(m.total_return_pct)}</dd><dd className="fact-note">Holding the stock: {fmtPct(m.buy_hold_return_pct)}</dd></div>
                   <div className="fact"><dt>Completed trades</dt><dd className="fact-value">{m.trades}</dd><dd className="fact-note">{m.win_rate_pct === null ? 'None closed yet' : `${m.win_rate_pct.toFixed(0)}% made money`}</dd></div>
-                  <div className="fact"><dt>Trading days followed</dt><dd className="fact-value">{m.bars}</dd><dd className="fact-note">{m.first_date} to {m.last_date}</dd></div>
+                  <div className="fact"><dt>Trading days followed</dt><dd className="fact-value">{m.bars}</dd><dd className="fact-note">Since {m.first_date}</dd></div>
                 </dl>
               </section>
 

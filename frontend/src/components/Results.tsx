@@ -36,7 +36,7 @@ export function DataPicker({ datasets, value, onChange, onUploaded, label = 'Pri
         <label htmlFor="dp-select">{label}</label>
         <div className="field-row">
           <select id="dp-select" value={value ?? ''} onChange={e => onChange(e.target.value)}>
-            {datasets.map(d => <option key={d.id} value={d.id}>{d.name} ({d.rows} days)</option>)}
+            {datasets.map(d => <option key={d.id} value={d.id}>{d.synthetic ? 'Sample stock (synthetic prices)' : d.symbol ?? d.name}, {d.first_date} to {d.last_date}, {d.rows} days</option>)}
           </select>
           <button type="button" className="btn quiet" onClick={() => setOpen(o => !o)} aria-expanded={open}>Import NSE prices</button>
         </div>
@@ -54,7 +54,7 @@ export function DataPicker({ datasets, value, onChange, onUploaded, label = 'Pri
             <input ref={fileRef} type="file" accept=".csv,text/csv" aria-label="CSV file" />
             <input placeholder="Symbol, e.g. INFY" value={symbol} onChange={e => setSymbol(e.target.value)} aria-label="Symbol" />
             <input placeholder="Where it came from" value={note} onChange={e => setNote(e.target.value)} aria-label="Source of the prices" />
-            <button type="button" className="btn" onClick={upload} disabled={busy}>{busy ? 'Importing…' : 'Import'}</button>
+            <button type="button" className="btn" onClick={upload} disabled={busy}>{busy ? 'Importing…' : 'Import prices'}</button>
           </div>
         </div>
       )}
@@ -120,7 +120,14 @@ export function ResultDetail({ result }: { result: BacktestResult }) {
     <section className="detail" aria-label="Backtest detail">
       <div className="tabs" role="tablist" aria-label="Result views">
         {tabs.map(([k, label]) => (
-          <button key={k} role="tab" id={`tab-${k}`} aria-selected={tab === k} aria-controls={`panel-${k}`} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>
+          <button key={k} role="tab" id={`tab-${k}`} aria-selected={tab === k} aria-controls={`panel-${k}`} className={tab === k ? 'on' : ''}
+            tabIndex={tab === k ? 0 : -1} onClick={() => setTab(k)}
+            onKeyDown={e => {
+              const i = tabs.findIndex(t => t[0] === k)
+              const j = e.key === 'ArrowRight' ? (i + 1) % tabs.length : e.key === 'ArrowLeft' ? (i + tabs.length - 1) % tabs.length : -1
+              if (j < 0) return
+              e.preventDefault(); setTab(tabs[j][0]); document.getElementById(`tab-${tabs[j][0]}`)?.focus()
+            }}>{label}</button>
         ))}
       </div>
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="tab-panel">
@@ -195,7 +202,7 @@ export function Assumptions({ fee = 3, slippage = 5, extra }: { fee?: number; sl
 export function Results({ result, running, error, bot = 'These rules' }: { result: BacktestResult | null; running: boolean; error: string | null; bot?: string }) {
   if (error) return <div className="results-empty error-text" role="alert">{error}</div>
   if (!result) return <div className="results-empty">{running ? 'Running the backtest…' : 'The backtest runs as soon as the rules are complete.'}</div>
-  const stock = result.dataset.symbol ?? 'the stock'
+  const stock = result.dataset.synthetic ? 'the sample stock' : result.dataset.symbol?.replace(/\.NS$/, '') ?? 'the stock'
   return (
     <div className={`results ${running ? 'stale' : ''}`} aria-busy={running}>
       <VerdictPanel result={result} bot={bot} stock={stock} />

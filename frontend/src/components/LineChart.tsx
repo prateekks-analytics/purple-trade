@@ -69,9 +69,10 @@ export function LineChart({ dates, series, markers = [], height = 240, format, a
   }
 
   const dateTicks = useMemo(() => {
-    const k = Math.max(1, Math.floor(n / 6))
+    const slots = Math.max(2, Math.min(6, Math.floor((width - PAD.left - PAD.right) / 90)))
+    const k = Math.max(1, Math.ceil(n / slots))
     return dates.map((d, i) => ({ d, i })).filter(({ i }) => i % k === 0 && i < n - k / 2)
-  }, [dates, n])
+  }, [dates, n, width])
 
   const onMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const svg = ref.current
@@ -107,7 +108,7 @@ export function LineChart({ dates, series, markers = [], height = 240, format, a
         </div>
       )}
       <div className="chart-plot" style={{ height }}>
-      <svg ref={ref} role="img" aria-label={ariaLabel} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none"
+      <svg ref={ref} role="group" aria-roledescription="chart" aria-label={`${ariaLabel}. Use the left and right arrow keys to read values day by day.`} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none"
         width="100%" height={height}
         tabIndex={0} onKeyDown={onKey} onBlur={() => setHover(null)}
         onPointerMove={onMove} onPointerLeave={() => setHover(null)}>

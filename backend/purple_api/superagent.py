@@ -688,10 +688,10 @@ def rules_signal(strategy: Strategy, bars: list[Bar], result: dict) -> dict:
                        t - idx + 1, (bars[t].close / open_t["entry_price"] - 1) * 100)
         hit = evaluate(ctx, strategy.exit, t)
         return {"date": bars[t].date, "action": "SELL" if hit else "HOLD",
-                "reason": _reason(ctx, strategy.exit, t) if hit else "Holding: sell rules not met today."}
+                "reason": _reason(ctx, strategy.exit, t) if hit else "Holding shares: the sell rules did not match today."}
     hit = evaluate(ctx, strategy.entry, t)
     return {"date": bars[t].date, "action": "BUY" if hit else "HOLD",
-            "reason": _reason(ctx, strategy.entry, t) if hit else "Flat: buy rules not met today."}
+            "reason": _reason(ctx, strategy.entry, t) if hit else "Not holding shares: the buy rules did not match today."}
 
 
 def paper_bars(synthetic: bool, base: list[Bar], sim_days: int) -> list[Bar]:

@@ -46,12 +46,12 @@ export function readVerdict(r: BacktestResult, bot: string, stock: string): Verd
   const tone = (v: number) => (v > 0 ? 'pos' : v < 0 ? 'neg' : undefined) as Fact['tone']
   const facts: Fact[] = [
     { label: 'Return', value: fmtPct(m.total_return_pct), tone: tone(m.total_return_pct), note: `Holding the stock: ${fmtPct(m.buy_hold_return_pct)}` },
-    { label: 'Worst drop', value: fmtPct(m.max_drawdown_pct), tone: m.max_drawdown_pct < 0 ? 'neg' : undefined,
-      note: `Holding the stock: ${fmtPct(bhDD)}. The biggest fall from a previous high.` },
+    { label: 'Worst fall from a peak', value: fmtPct(m.max_drawdown_pct), tone: m.max_drawdown_pct < 0 ? 'neg' : undefined,
+      note: `Holding the stock: ${fmtPct(bhDD)}` },
     { label: 'Completed trades', value: String(m.trades),
       note: m.win_rate_pct === null ? (open ? 'One trade is still open.' : 'No trade was completed.')
         : `${m.win_rate_pct.toFixed(0)}% made money${open ? ', plus one still open' : ''}.` },
-    { label: 'Time invested', value: `${m.exposure_pct.toFixed(0)}%`, note: 'Share of days it held shares rather than cash.' },
+    { label: 'Time invested', value: `${m.exposure_pct.toFixed(0)}%`, note: 'Days holding shares, not cash' },
   ]
 
   const meaning: string[] = []

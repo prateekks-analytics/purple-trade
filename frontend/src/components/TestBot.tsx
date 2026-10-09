@@ -28,6 +28,9 @@ const GROUPS = [
 
 const TA_COSTS = { fee_bps: 3, slippage_bps: 5 }
 
+export const stockName = (d: Dataset | null | undefined) =>
+  d?.synthetic ? 'the sample stock' : d?.symbol ? d.symbol.replace(/\.NS$/, '') : 'the stock'
+
 export function TestBot({ health, initialBot, onPaperCreated, onBuild }: {
   health: Health | null; initialBot?: string; onPaperCreated: (id: string) => void; onBuild: () => void
 }) {
@@ -87,7 +90,7 @@ export function TestBot({ health, initialBot, onPaperCreated, onBuild }: {
   const engines = bot?.info?.engines ?? []
   const engine = engines.find(e => e.id === engineId) ?? null
   const dataset = datasets.find(d => d.id === datasetId) ?? null
-  const stock = isAI ? symbol : dataset?.symbol ?? (dataset?.synthetic ? 'the sample stock' : 'the stock')
+  const stock = isAI ? symbol : stockName(dataset)
   const shown = result ?? teamResult
 
   const clear = () => { setResult(null); setTeamResult(null); setJob(null); setErr(null) }
@@ -257,7 +260,7 @@ export function TestBot({ health, initialBot, onPaperCreated, onBuild }: {
                 <p className="run-summary">
                   {isAI
                     ? <>Ask {bot.title} to decide each of the last {days} trading day{days > 1 ? 's' : ''} for {symbol || '…'}. Expect about {minutes[0]}–{minutes[1]} minutes{cost ? `; estimated cost $${cost[0].toFixed(2)}–${cost[1].toFixed(2)} of API credit` : ', free on this computer'}.</>
-                    : <>Replay {bot.title} over {dataset ? `${dataset.rows} trading days of ${dataset.name}` : 'the chosen prices'}. Takes a second, free.</>}
+                    : <>Replay {bot.title} over {dataset ? `${dataset.rows} trading days of ${stockName(dataset)} (${dataset.first_date} to ${dataset.last_date})` : 'the chosen prices'}. Takes a second, free.</>}
                 </p>
                 {isAI && cost && (
                   <label className="confirm">

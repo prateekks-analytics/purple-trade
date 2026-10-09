@@ -6,6 +6,7 @@
   --surface-2: #f0eff5;
   --line: #e1dfea;
   --line-strong: #c9c5d8;
+  --field-border: #857f98; /* 3.5:1+ on paper and surface (WCAG 1.4.11) */
   --ink: #1b1825;
   --ink-2: #4f4a62;
   --ink-3: #676179;
@@ -47,6 +48,7 @@
     --surface-2: #241f31;
     --line: #322c43;
     --line-strong: #4a4260;
+    --field-border: #776f90;
     --ink: #f1eff7;
     --ink-2: #c4bed6;
     --ink-3: #a19bb5;
@@ -100,7 +102,7 @@ code, pre { font-family: var(--mono); font-size: 0.88em; }
 .lede { margin-top: 12px; font-size: 17px; color: var(--ink-2); max-width: 64ch; }
 
 /* ---------- controls ---------- */
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: var(--r-sm); padding: 9px 16px; font-weight: 500; cursor: pointer; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: var(--r-sm); padding: 9px 16px; font-weight: 500; cursor: pointer; border: 1px solid var(--field-border); background: var(--surface); color: var(--ink); white-space: nowrap; }
 .btn:hover:not(:disabled) { border-color: var(--ink-3); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
@@ -118,7 +120,7 @@ code, pre { font-family: var(--mono); font-size: 0.88em; }
 .icon-btn:hover { background: var(--surface-2); color: var(--ink); border-color: var(--line); }
 
 input:not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([type="range"]), select, textarea {
-  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 8px 10px; min-height: 38px;
+  background: var(--surface); border: 1px solid var(--field-border); border-radius: var(--r-sm); padding: 8px 10px; min-height: 38px;
 }
 input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
 input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
@@ -140,7 +142,7 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); width
 .badge.ok { background: var(--accent-wash); color: var(--accent); }
 .badge.warn { background: var(--warn-wash); color: var(--warn-ink); }
 .toggles { display: flex; flex-wrap: wrap; gap: 6px; }
-.toggle { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 999px; padding: 4px 12px; cursor: pointer; font-size: 14px; }
+.toggle { border: 1px solid var(--field-border); background: var(--surface); border-radius: 999px; padding: 4px 12px; cursor: pointer; font-size: 14px; }
 .toggle.on { background: var(--accent-wash); border-color: var(--accent); color: var(--accent); font-weight: 500; }
 .toggle:disabled { cursor: not-allowed; opacity: 0.55; }
 .toggle.on:disabled { opacity: 1; cursor: default; }
@@ -178,9 +180,11 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); width
 .empty-line { padding: 12px 14px; border: 1px dashed var(--line-strong); border-radius: var(--r-md); font-size: 14px; color: var(--ink-2); }
 .chosen { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); flex-wrap: wrap; }
 
-.setup { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 24px; align-items: start; }
+.setup { display: flex; flex-direction: column; gap: 18px; }
 .setup-fields { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
 .setup-rules { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 16px; }
+.setup-rules .assumptions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 28px; }
+@media (max-width: 640px) { .setup-rules .assumptions { grid-template-columns: 1fr; } }
 .setup-rules h3, .meaning h3, .next h3, .sub-section h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
 .assumptions { margin: 0; padding-left: 18px; font-size: 13.5px; color: var(--ink-2); display: flex; flex-direction: column; gap: 6px; }
 .rules-readout { border-left: 2px solid var(--line-strong); padding: 2px 0 2px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 14.5px; }
