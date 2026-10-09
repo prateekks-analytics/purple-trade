@@ -37,6 +37,14 @@ def register(app: FastAPI, db: Store):
     jobs = sa.Jobs()
 
     def agent(agent_id: str) -> dict:
+        if agent_id.startswith("version:"):  # a saved (immutable) strategy version acts as a rule bot
+            v = db.get_version(agent_id[len("version:"):])
+            if not v:
+                raise HTTPException(404, "Saved strategy version not found")
+            s = db.get_strategy(v["strategy_id"])
+            title = f"{s['name'] if s else 'Saved strategy'} (version {v['number']})"
+            return {"id": agent_id, "kind": "rules", "title": title, "analyses": [],
+                    "strategy": Strategy.model_validate(v["body"])}
         a = next((x for x in sa.catalog() if x["id"] == agent_id), None)
         if not a:
             raise HTTPException(404, "Unknown agent")

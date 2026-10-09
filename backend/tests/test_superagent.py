@@ -188,3 +188,19 @@ def test_exported_team_script_compiles(setup):
     ns: dict = {"__name__": "exported"}
     exec(compile(out["code"], "team.py", "exec"), ns)
     assert ns["MODEL_DEFAULT"] == "fake-1" and "run_team" in ns and out["filename"].endswith("_tcs.py")
+
+
+def test_saved_version_runs_paper_trades_and_exports(setup):
+    c, _, ds = setup
+    sid = c.post("/api/strategies", json={"name": "Mine"}).json()["id"]
+    body = sa.rule_strategy("ta-ema-momentum").model_dump()
+    assert c.put(f"/api/strategies/{sid}/draft", json=body).status_code == 200
+    vid = c.post(f"/api/strategies/{sid}/approve").json()["versions"][0]["id"]
+    aid = f"version:{vid}"
+    r = c.post("/api/superagent/run", json={"agent_id": aid, "dataset_id": ds["id"]}).json()
+    direct = c.post("/api/backtests", json={"strategy_id": sid, "dataset_id": ds["id"], "version_id": vid}).json()
+    assert r["kind"] == "rules" and r["result"]["metrics"] == direct["metrics"]
+    v = c.post("/api/superagent/paper", json={"agent_id": aid, "dataset_id": ds["id"], "capital": 20000}).json()
+    assert v["agent"]["title"].endswith("(version 1)") and v["result"]["metrics"]["start_equity"] == 20000
+    assert "STRATEGY" in c.get("/api/superagent/export", params={"agent_id": aid}).json()["code"]
+    assert c.post("/api/superagent/run", json={"agent_id": "version:nope", "dataset_id": ds["id"]}).status_code == 404
