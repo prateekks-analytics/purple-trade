@@ -6,3 +6,5 @@ __pycache__/
 *.sqlite3
 *.egg-info/
 .env
+dist_exe/
+build_exe/

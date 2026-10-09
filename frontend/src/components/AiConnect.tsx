@@ -24,7 +24,7 @@ function pickModel(p: AiProvider, models: string[]) {
 }
 
 /** "Connect an AI": choose a provider, paste your own key, test it, pick a model. */
-export function AiConnect({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AiConnect({ open, onClose, hosted = false }: { open: boolean; onClose: () => void; hosted?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null)
   const current = getAi()
   const [providers, setProviders] = useState<AiProvider[]>([])
@@ -37,7 +37,8 @@ export function AiConnect({ open, onClose }: { open: boolean; onClose: () => voi
   const [err, setErr] = useState<string | null>(null)
   const p = providers.find(x => x.id === pid)
 
-  useEffect(() => { api.aiProviders().then(setProviders).catch(e => setErr(errText(e))) }, [])
+  // On the online demo, 'Ollama on this computer' would mean the server, not the visitor's computer.
+  useEffect(() => { api.aiProviders().then(ps => setProviders(ps.filter(x => !(hosted && x.id === 'ollama')))).catch(e => setErr(errText(e))) }, [hosted])
   useEffect(() => {
     const d = ref.current
     if (!d) return

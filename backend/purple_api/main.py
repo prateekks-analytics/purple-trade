@@ -1,6 +1,8 @@
 """Purple Trade API."""
 from __future__ import annotations
 
+import os
+
 from pathlib import Path, PurePath
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -79,7 +81,7 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
     # ----- meta -----
     @app.get("/api/health")
     def health(request: Request):
-        return {"ok": True, "ai": provider_for(request).status()}
+        return {"ok": True, "ai": provider_for(request).status(), "hosted": bool(os.environ.get("PURPLE_HOSTED"))}
 
     @app.get("/api/ai/providers")
     def ai_provider_list():
@@ -313,7 +315,7 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
     superagent_routes.register(app, db)
 
     # ----- frontend (production build) -----
-    dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    dist = Path(os.environ.get("PURPLE_DIST") or Path(__file__).resolve().parents[2] / "frontend" / "dist")
     if dist.is_dir():
         app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
 

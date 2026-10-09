@@ -46,7 +46,15 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const check = () => api.health().then(setHealth).catch(() =>
+    let first = true
+    const check = () => api.health().then(h => {
+      setHealth(h)
+      // First visit with no AI available: ask for a key once (rule bots and backtests work without one).
+      if (first && !h.ai.available && !getAi()) {
+        try { if (!sessionStorage.getItem('purple.ai.asked')) { sessionStorage.setItem('purple.ai.asked', '1'); setAiOpen(true) } } catch { setAiOpen(true) }
+      }
+      first = false
+    }).catch(() =>
       setHealth({ ok: false, ai: { provider: '-', model: '-', available: false, detail: 'Server unreachable.' } }))
     check()
     const t = setInterval(check, 30000)
@@ -83,7 +91,10 @@ export default function App() {
           {health?.ai.available ? `AI: ${getAi() ? getAi()!.provider : health.ai.provider}` : 'Connect an AI'}
         </button>
       </header>
-      <AiConnect key={aiOpen ? 'open' : 'closed'} open={aiOpen} onClose={() => setAiOpen(false)} />
+      <AiConnect key={aiOpen ? 'open' : 'closed'} open={aiOpen} hosted={Boolean(health?.hosted)} onClose={() => setAiOpen(false)} />
+      {health?.hosted && (
+        <p className="hosted-note">Shared online demo: strategies and paper accounts saved here are visible to other visitors and are wiped when the server restarts. For private use, download the Windows app.</p>
+      )}
       <main id="main" className="main" tabIndex={-1}>
         {route.page === 'strategy' ? (
           <Workspace key={`${route.id}-${aiVersion}`} id={route.id} initialIdea={idea} initialProposal={imported} health={health}

@@ -1,4 +1,35 @@
-# Purple Trade — new build (started 2 October 2026)
+# Purple Trade
+
+Test trading bots on Indian (NSE) daily prices, read a plain-English verdict, and follow a bot with
+virtual money in a paper account. Research and paper trading only: it never places real orders.
+
+## Try it on Windows (no setup)
+
+1. Download **[PurpleTrade-windows.zip](https://github.com/prateekks-analytics/purple-trade/releases/latest/download/PurpleTrade-windows.zip)**
+   and unzip it.
+2. Double-click **PurpleTrade.exe**. Your browser opens the app. Keep the black window open while you use it;
+   close it to stop.
+   - If Windows shows "Windows protected your PC", click **More info → Run anyway** (the app is not code-signed).
+3. When asked, **connect an AI**: choose a provider and paste your own API key. Google Gemini is free:
+   get a key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+   Groq and OpenRouter also have free tiers; OpenAI and Anthropic are paid. The key stays on your computer.
+
+You can skip the AI: the rule bots, backtests and paper accounts work without one. The AI is used to turn
+your own ideas or files into rules, and to run AI agents.
+
+## What you can do
+
+- **Test a bot**: pick a ready-made bot or your own strategy, choose a stock and period, run a backtest,
+  and read what the result means.
+- **Build your own**: describe an idea in plain words (or upload a file) and get exact rules you can edit.
+- **Paper accounts**: follow a bot day by day with virtual money.
+
+Your strategies and paper accounts are saved on your computer in `%LOCALAPPDATA%\PurpleTrade`.
+The original TradingAgents agent needs a separate developer install and is not part of the download.
+
+---
+
+## Developer notes (build history and architecture)
 
 Fresh implementation. The old root-level Purple Trade app (`purple_trade_*.py/js/html/css`, its docs and
 `data/purple_trade/`) is **superseded and not used**: the user judged its output and workflow unusable.

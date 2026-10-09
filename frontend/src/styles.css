@@ -502,3 +502,4 @@ select.chip-select.rel { background: var(--surface-2); color: var(--ink); min-wi
 .ai-foot .spacer { flex: 1; }
 @media (max-width: 640px) { .ai-providers { grid-template-columns: 1fr; } .ai-status { order: 2; margin-left: auto; } }
 .ai-cost { display: block; }
+.hosted-note { margin: 0; padding: 8px 28px; font-size: 13.5px; background: var(--warn-wash); color: var(--warn-ink); border-bottom: 1px solid var(--line); }

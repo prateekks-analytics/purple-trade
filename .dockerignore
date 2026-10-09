@@ -1,0 +1,8 @@
+**/node_modules
+**/.venv
+frontend/dist
+backend/data
+external
+dist_exe
+build_exe
+.env
