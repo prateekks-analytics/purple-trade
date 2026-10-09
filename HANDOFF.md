@@ -91,6 +91,20 @@ short intro, broker notes collapsed. Checked at 1366 px and 375 px, no console e
 Progress label now names the chosen AI (was hard-coded "local AI, 30–60 s"). Next: one test day RELIANCE.NS 2026-10-01 (free Gemini first), compare
 with Qwen's Buy. Claude.ai subscription can't be used for the API (separate pay-as-you-go Console billing).
 
+## Sharing (9 Oct 2026)
+
+- Public repo: https://github.com/prateekks-analytics/purple-trade (only `purple/`, pushed with
+  `git subtree split --prefix=purple -b purple-public` then `git push <repo> purple-public:main`).
+- Windows app: release v1.0.0, stable link
+  https://github.com/prateekks-analytics/purple-trade/releases/latest/download/PurpleTrade-windows.zip
+  (rebuild with `build_exe.ps1`; PyInstaller is installed in backend/.venv). Data: %LOCALAPPDATA%\PurpleTrade.
+- "Connect an AI" dialog: Gemini, Groq, OpenRouter, OpenAI, Anthropic, Ollama. Key kept in the browser and sent
+  as X-AI-* headers per request; server never stores it. Gemini retries + falls back when the free tier is busy.
+- Hosted demo: `Dockerfile` (PURPLE_HOSTED=1 shows a shared-demo banner). Docker build NOT verified (Docker
+  Desktop was not running); hosted settings verified by running uvicorn with the same environment.
+  Needs the user to create a free Render or Hugging Face account.
+- Tests: 62 passing.
+
 ## Redesign — done (9 Oct 2026)
 
 One app, three sections in the top bar (hash routes): **Test a bot** `#/test[/<botId>]`, **Build your own** `#/build`
