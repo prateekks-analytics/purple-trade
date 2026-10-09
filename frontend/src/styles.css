@@ -373,7 +373,8 @@ tr.open-row td { background: var(--surface-2); }
 .canvas-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; position: sticky; top: -16px; background: var(--paper); padding: 14px 0 12px; z-index: 5; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
 .back { white-space: nowrap; font-size: 14px; }
 .title-input { font-family: var(--serif); font-size: 26px; font-weight: 400; border: 1px solid transparent; background: transparent; border-radius: var(--r-sm); padding: 0 6px !important; min-width: 120px; flex: 1 1 240px; }
-.title-input:hover, .title-input:focus { border-color: var(--line-strong); background: var(--surface); }
+.title-input { border-color: transparent !important; background: transparent !important; }
+.title-input:hover, .title-input:focus-visible { border-color: var(--field-border) !important; background: var(--surface) !important; }
 .save-state { font-size: 13px; color: var(--ink-3); white-space: nowrap; }
 .save-state.error { color: var(--loss); }
 .head-right { display: flex; gap: 12px; align-items: center; margin-left: auto; flex-wrap: wrap; }
