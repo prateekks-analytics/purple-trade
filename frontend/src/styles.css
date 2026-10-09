@@ -478,3 +478,27 @@ select.chip-select.rel { background: var(--surface-2); color: var(--ink); min-wi
   .debate { grid-template-columns: 1fr; }
   .workspace { height: auto; }
 }
+
+/* ---------- Connect an AI ---------- */
+.ai-status { margin-left: auto; align-self: center; display: inline-flex; align-items: center; gap: 2px; background: var(--surface); border: 1px solid var(--field-border); border-radius: 999px; padding: 5px 12px; font-size: 13.5px; cursor: pointer; color: var(--ink); text-transform: none; }
+.ai-status:hover { border-color: var(--accent); }
+.ai-status.off { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.ai-status.off .status-dot { background: var(--on-accent); }
+.ai-dialog { border: 1px solid var(--line-strong); border-radius: var(--r-md); padding: 0; width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); background: var(--surface); color: var(--ink); box-shadow: 0 20px 60px rgb(20 12 50 / 25%); }
+.ai-dialog::backdrop { background: rgb(18 16 25 / 45%); }
+.ai-form { display: flex; flex-direction: column; gap: 16px; padding: 22px 24px; }
+.ai-head { display: flex; justify-content: space-between; align-items: center; }
+.ai-head h2 { font-family: var(--serif); font-weight: 400; font-size: 28px; }
+.ai-providers { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ai-providers legend { margin-bottom: 8px; }
+.ai-provider { display: flex; gap: 10px; align-items: flex-start; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--r-sm); cursor: pointer; font-size: 14px; }
+.ai-provider:hover { background: var(--surface-2); }
+.ai-provider.on { border-color: var(--accent); background: var(--accent-wash); }
+.ai-provider input { margin-top: 3px; }
+.ai-form .field-row input { flex: 1 1 240px; min-width: 0; }
+.ai-form a { color: var(--accent); }
+.check-row { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+.ai-foot { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; }
+.ai-foot .spacer { flex: 1; }
+@media (max-width: 640px) { .ai-providers { grid-template-columns: 1fr; } .ai-status { order: 2; margin-left: auto; } }
+.ai-cost { display: block; }

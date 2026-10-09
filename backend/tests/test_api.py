@@ -275,3 +275,44 @@ def test_agents_route_with_gemini_drafting():
     c = TestClient(create_app(store=Store(":memory:"), provider=FakeGemini()))
     r = c.get("/api/superagent/agents")
     assert r.status_code == 200, r.text
+
+
+def test_browser_connected_ai_is_used_per_request(monkeypatch):
+    import httpx
+    from fastapi.testclient import TestClient
+    from purple_api.ai import providers as pv
+    from purple_api.main import create_app
+    from purple_api.store import Store
+
+    class Offline:
+        name, model = "ollama", "none"
+        def status(self):
+            return {"provider": "ollama", "model": "none", "available": False, "detail": "offline"}
+        def complete(self, system, messages):
+            raise AssertionError("server default must not be used when the browser sends a provider")
+
+    calls = []
+    def fake_post(url, json, headers, timeout):
+        calls.append((url, headers))
+        rule = {"name": "x", "entry": {"kind": "compare", "left": {"kind": "indicator", "name": "rsi", "period": 14, "source": "close", "offset": 0},
+                                       "op": "<", "right": {"kind": "const", "value": 30}},
+                "exit": {"kind": "compare", "left": {"kind": "position", "field": "pnl_pct"}, "op": "<=", "right": {"kind": "const", "value": -5}},
+                "questions": []}
+        import json as j
+        return httpx.Response(200, json={"choices": [{"message": {"content": j.dumps({"strategy": rule, "questions": [], "notes": "ok"})}}]})
+    monkeypatch.setattr(pv.httpx, "post", fake_post)
+    monkeypatch.setattr(pv.httpx, "get", lambda url, headers, timeout: httpx.Response(200, json={"data": [{"id": "m2"}, {"id": "m1"}]}))
+
+    c = TestClient(create_app(store=Store(":memory:"), provider=Offline()))
+    h = {"X-AI-Provider": "groq", "X-AI-Key": "gsk-test", "X-AI-Model": "m1"}
+    assert c.get("/api/health").json()["ai"]["available"] is False
+    assert c.get("/api/health", headers=h).json()["ai"] == {"provider": "groq", "model": "m1", "available": True, "detail": "groq key from this browser."}
+    assert c.post("/api/ai/test", json={"provider": "groq", "key": "gsk-test"}).json() == {"ok": True, "models": ["m1", "m2"]}
+    assert c.post("/api/ai/test", json={"provider": "nope", "key": "x"}).status_code == 400
+    sid = c.post("/api/strategies", json={"name": "t"}).json()["id"]
+    r = c.post(f"/api/strategies/{sid}/ai", json={"message": "rsi under 30"}, headers=h)
+    assert r.status_code == 200, r.text
+    assert calls and calls[0][0] == "https://api.groq.com/openai/v1/chat/completions" and calls[0][1]["Authorization"] == "Bearer gsk-test"
+    engines = {e["id"]: e for e in next(a for a in c.get("/api/superagent/agents", headers={"X-AI-Provider": "gemini", "X-AI-Key": "g"}).json()
+                                         if a["kind"] == "ta-original")["engines"]}
+    assert engines["gemini-flash"]["available"]

@@ -84,7 +84,7 @@ def test_original_tradingagents_bridge(monkeypatch):
     bars = synthetic_bars(300)
     calls = []
 
-    def fake_process(args, on_event, timeout_s):
+    def fake_process(args, on_event, timeout_s, extra_env=None):
         if "--prices" in args:
             return {"event": "prices", "bars": [[b.date, b.open, b.high, b.low, b.close, b.volume] for b in bars]}
         calls.append(args)
@@ -117,7 +117,7 @@ def test_ta_cloud_engine_choice(monkeypatch):
     bars = synthetic_bars(300)
     calls = []
 
-    def fake_process(args, on_event, timeout_s):
+    def fake_process(args, on_event, timeout_s, extra_env=None):
         if "--prices" in args:
             return {"event": "prices", "bars": [[b.date, b.open, b.high, b.low, b.close, b.volume] for b in bars]}
         calls.append(args)

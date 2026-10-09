@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import re
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from . import superagent as sa
-from .ai.providers import OllamaProvider
+from .ai.providers import KEY_ENV, OllamaProvider
 from .describe import describe, validate
 from .engine import bars_hash, run_backtest
 from .schema import Strategy
@@ -47,9 +47,17 @@ def register(app: FastAPI, db: Store):
             _local.append(OllamaProvider())
         return _local[0]
 
-    def default_ta_engine() -> dict:
+    def browser_keys(request: Request | None) -> dict:
+        """Key the person connected in this browser, as the environment variable TradingAgents expects."""
+        if request is None:
+            return {}
+        env = KEY_ENV.get(request.headers.get("x-ai-provider", "").strip().lower())
+        key = request.headers.get("x-ai-key", "").strip()
+        return {env: key} if env and key else {}
+
+    def default_ta_engine(keys: dict | None = None) -> dict:
         """Gemini Flash when a Google key is set, else local Qwen (used where the user picks no engine)."""
-        avail = {e["id"] for e in sa.ta_engines(local_ai().status()["available"]) if e["available"]}
+        avail = {e["id"] for e in sa.ta_engines(local_ai().status()["available"], keys) if e["available"]}
         for eid in ("gemini-flash", "local"):
             if eid in avail:
                 return sa.ta_engine(eid)
@@ -115,41 +123,42 @@ def register(app: FastAPI, db: Store):
         return db.add_dataset(f"{ticker} · {bars[0].date} → {bars[-1].date}", ticker,
                               "Yahoo Finance via yfinance (unofficial; not verified against NSE)", bars, h)
 
-    def ta_engine_or_error(engine_id: str, confirm_paid: bool) -> dict:
+    def ta_engine_or_error(engine_id: str, confirm_paid: bool, keys: dict) -> dict:
         e = sa.ta_engine(engine_id)
         if not e:
             raise HTTPException(422, f"Unknown AI engine {engine_id!r}.")
-        info = next(x for x in sa.ta_engines(local_ai().status()["available"]) if x["id"] == e["id"])
+        info = next(x for x in sa.ta_engines(local_ai().status()["available"], keys) if x["id"] == e["id"])
         if not info["available"]:
             raise HTTPException(503, f"{e['label']} can't run: {info['why']}")
         if e["paid"] and not confirm_paid:
             raise HTTPException(402, f"{e['label']} costs money per run. Confirm the cost estimate to continue.")
         return e
 
-    def decider(a: dict, bars, symbol: str, analyses: list[str], engine: dict | None = None):
+    def decider(a: dict, bars, symbol: str, analyses: list[str], engine: dict | None = None, keys: dict | None = None):
         if a["kind"] == "ta-original":
-            return sa.ta_decider(bars, symbol, analyses, local_ai().model, engine)
+            return sa.ta_decider(bars, symbol, analyses, local_ai().model, engine, keys)
         return sa.team_decider(bars, symbol, team_complete())
 
     @app.get("/api/superagent/agents")
-    def agents():
+    def agents(request: Request):
         out = []
         for a in sa.catalog():
             a = dict(a)
             if a.get("strategy"):
                 a["describe"] = describe(Strategy.model_validate(a["strategy"]))
             if a["kind"] == "ta-original":
-                a["engines"] = sa.ta_engines(local_ai().status()["available"])
+                a["engines"] = sa.ta_engines(local_ai().status()["available"], browser_keys(request))
             out.append(a)
         return out
 
     @app.post("/api/superagent/run")
-    def run(body: RunIn):
+    def run(body: RunIn, request: Request):
+        keys = browser_keys(request)
         a = agent(body.agent_id)
         analyses = check_analyses(a, body.analyses)
         engine = None
         if a["kind"] == "ta-original":
-            engine = ta_engine_or_error(body.engine, body.confirm_paid)
+            engine = ta_engine_or_error(body.engine, body.confirm_paid, keys)
             if not body.symbol:
                 raise HTTPException(422, "Enter an NSE symbol, e.g. RELIANCE.")
             if body.days > sa.TA_MAX_DAYS:
@@ -183,7 +192,7 @@ def register(app: FastAPI, db: Store):
         key = f"bt:{a['id']}:{model}:{','.join(analyses)}:{did}:{bars[start].date}"
         cached = db.get_decisions(key)
         missing = sum(1 for b in bars[start:] if b.date not in cached)
-        decide = decider(a, bars, symbol, analyses, engine)
+        decide = decider(a, bars, symbol, analyses, engine, keys)
 
         def work(log, progress):
             ds = sa.decide_days(bars, start, cached, decide, log, progress,
@@ -291,14 +300,15 @@ def register(app: FastAPI, db: Store):
         return paper_view(p)
 
     @app.post("/api/superagent/paper/{pid}/decide")
-    def decide(pid: str):
+    def decide(pid: str, request: Request):
+        keys = browser_keys(request)
         """Ask the AI agent for every day it hasn't decided yet (background job)."""
         p = paper_or_404(pid)
         v = paper_view(p)
         a = agent(p["agent_id"])
         if a["kind"] not in AI_KINDS:
             raise HTTPException(400, "Rule bots decide instantly; nothing to run.")
-        engine = default_ta_engine() if a["kind"] == "ta-original" else None
+        engine = default_ta_engine(keys) if a["kind"] == "ta-original" else None
         if engine is None:
             model_or_503()
         bars = account_bars(p)
@@ -306,7 +316,7 @@ def register(app: FastAPI, db: Store):
         key = f"paper:{pid}"
         cached = db.get_decisions(key)
         analyses = p.get("analyses") or ["market"]
-        do = decider(a, bars, p["symbol"] or "the stock", analyses, engine)
+        do = decider(a, bars, p["symbol"] or "the stock", analyses, engine, keys)
 
         def work(log, progress):
             sa.decide_days(bars, start, cached, do, log, progress, save=lambda d, x: db.save_decision(key, d, x))

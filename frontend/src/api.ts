@@ -1,7 +1,8 @@
 import type {
-  AgentImport, BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, Review, RunResponse, Strategy,
+  AgentImport, AiProvider, BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, Review, RunResponse, Strategy,
   StrategyDoc, StrategySummary, SuperAgentInfo, Template,
 } from './types'
+import { aiHeaders } from './lib/aiSettings'
 
 export class ApiError extends Error {
   status: number
@@ -16,7 +17,7 @@ export class ApiError extends Error {
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
-    res = await fetch(path, { cache: 'no-store', ...init })
+    res = await fetch(path, { cache: 'no-store', ...init, headers: { ...aiHeaders(), ...(init?.headers ?? {}) } })
   } catch {
     throw new ApiError(0, 'Cannot reach the Purple Trade server. Is it running?')
   }
@@ -39,6 +40,8 @@ const json = (method: string, body?: unknown): RequestInit => ({
 
 export const api = {
   health: () => req<Health>('/api/health'),
+  aiProviders: () => req<AiProvider[]>('/api/ai/providers'),
+  aiTest: (provider: string, key: string) => req<{ ok: boolean; models: string[] }>('/api/ai/test', json('POST', { provider, key })),
   templates: () => req<Template[]>('/api/templates'),
   listStrategies: () => req<StrategySummary[]>('/api/strategies'),
   createStrategy: (name = 'Untitled strategy', template_id?: string) =>

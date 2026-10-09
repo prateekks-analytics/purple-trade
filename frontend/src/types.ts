@@ -206,3 +206,5 @@ export interface PaperView {
 }
 
 export interface Health { ok: boolean; ai: { provider: string; model: string; available: boolean; detail: string } }
+
+export interface AiProvider { id: string; label: string; cost: string; key_url: string; default_model: string; needs_key: boolean }

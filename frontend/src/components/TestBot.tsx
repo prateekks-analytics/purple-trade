@@ -4,6 +4,7 @@ import type { BacktestResult, Dataset, Job, Strategy, SuperAgentInfo, TeamResult
 import { fmtMoney } from '../lib/tree'
 import { DecisionLog, DownloadCode, errText, JobProgress, useJob } from './AgentBits'
 import { Assumptions, DataPicker, ResultDetail, VerdictPanel } from './Results'
+import { openAiConnect } from '../lib/aiSettings'
 
 /** One row in the bot chooser: a curated agent, a rule bot, or a saved strategy version. */
 interface Bot {
@@ -273,7 +274,7 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
                     <span>I approve spending up to about ${cost[1].toFixed(2)} of my API credit on this run.</span>
                   </label>
                 )}
-                {isAI && engine && !engine.available && <p className="error-text">{engine.why}</p>}
+                {isAI && engine && !engine.available && <p className="error-text">{engine.why} <button className="link-btn" onClick={openAiConnect}>Connect an AI</button></p>}
                 <div className="run-row">
                   <button className="btn primary" onClick={run} disabled={!ready || busy || running}>{busy ? 'Starting…' : running ? 'Running…' : shown ? 'Run again' : 'Run backtest'}</button>
                 </div>

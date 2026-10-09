@@ -321,13 +321,14 @@ def ta_engine(engine_id: str) -> dict | None:
     return next((e for e in TA_ENGINES if e["id"] == engine_id), None)
 
 
-def ta_engines(local_ok: bool) -> list[dict]:
-    """Engines with availability; never reveals key values, only whether the variable is set."""
+def ta_engines(local_ok: bool, keys: dict | None = None) -> list[dict]:
+    """Engines with availability; never reveals key values, only whether a key is set (environment or this browser)."""
+    keys = keys or {}
     out = []
     for e in TA_ENGINES:
-        ok = local_ok if e["key_env"] is None else bool(os.environ.get(e["key_env"]))
+        ok = local_ok if e["key_env"] is None else bool(os.environ.get(e["key_env"]) or keys.get(e["key_env"]))
         why = "" if ok else ("Local AI is offline." if e["key_env"] is None
-                             else f"Set {e['key_env']} in your environment, then restart Purple.")
+                             else f"Connect this provider with 'AI' in the top bar, or set {e['key_env']}.")
         out.append({k: e[k] for k in ("id", "label", "paid", "note", "minutes")}
                    | {"cost_per_day": e.get("cost_per_day"), "available": ok, "why": why})
     return out
@@ -354,8 +355,8 @@ def nse_ticker(symbol: str) -> str:
     return s if "." in s or s.startswith("^") else f"{s}.NS"
 
 
-def _ta_process(args: list[str], on_event, timeout_s: float) -> dict:
-    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1",
+def _ta_process(args: list[str], on_event, timeout_s: float, extra_env: dict | None = None) -> dict:
+    env = {**os.environ, **(extra_env or {}), "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1",
            "TRADINGAGENTS_RESULTS_DIR": str(TA_HOME / "logs"), "TRADINGAGENTS_CACHE_DIR": str(TA_HOME / "cache"),
            "TRADINGAGENTS_MEMORY_LOG_PATH": str(TA_HOME / "memory" / "trading_memory.md")}
     provider = args[args.index("--provider") + 1] if "--provider" in args else "ollama"
@@ -404,7 +405,8 @@ def ta_prices(symbol: str, period: str = "2y") -> list[Bar]:
     return [Bar(*row) for row in ev["bars"]]
 
 
-def ta_decider(bars: list[Bar], symbol: str, analysts: list[str], model: str, engine: dict | None = None):
+def ta_decider(bars: list[Bar], symbol: str, analysts: list[str], model: str, engine: dict | None = None,
+               extra_env: dict | None = None):
     ticker = nse_ticker(symbol)
     engine = engine or TA_ENGINES[0]
 
@@ -412,7 +414,7 @@ def ta_decider(bars: list[Bar], symbol: str, analysts: list[str], model: str, en
         def on_event(ev):
             log(ev.get("who", "step"), ev.get("text", ""))
         ev = _ta_process(["--ticker", ticker, "--date", bars[t].date, "--analysts", ",".join(analysts),
-                          *ta_engine_args(engine, model)], on_event, 45 * 60)
+                          *ta_engine_args(engine, model)], on_event, 45 * 60, extra_env)
         action, notes = ev["action"], []
         usage = ev.get("usage") or {}
         if usage.get("calls"):

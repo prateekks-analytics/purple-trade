@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import type { Health, Proposal, StrategySummary, Template } from '../types'
 import { errText } from './AgentBits'
+import { openAiConnect } from '../lib/aiSettings'
 
 const EXAMPLES = [
   'Buy when RSI is 10 and sell when RSI goes above 90',
@@ -68,7 +69,8 @@ export function Build({ health, onOpen, onTest }: {
         <div className="compose-row">
           <p className="field-note">
             <span className={`status-dot ${aiReady ? 'on' : 'off'}`} aria-hidden />
-            {health ? (aiReady ? (health.ai.provider === 'gemini' ? `Drafted by Google ${health.ai.model} (free tier). Your idea is sent to Google.` : `Drafted by ${health.ai.model} on this computer. Free.`) : `The AI is not available: ${health.ai.detail} You can still write rules by hand.`) : 'Checking the AI…'}
+            {health ? (aiReady ? (health.ai.provider === 'gemini' ? `Drafted by Google ${health.ai.model} (free tier). Your idea is sent to Google.` : `Drafted by ${health.ai.model} on this computer. Free.`) : 'No AI connected yet. You can still write rules by hand.') : 'Checking the AI…'}
+            {health && !aiReady && <> <button className="link-btn" onClick={openAiConnect}>Connect an AI</button></>}
           </p>
           <div className="compose-actions">
             <input ref={fileRef} type="file" hidden aria-label="File to turn into rules"
@@ -78,7 +80,7 @@ export function Build({ health, onOpen, onTest }: {
               title="Bot code (Python, Pine Script, JavaScript, MQL), notes, Excel, Word, PDF or a Purple .json file">
               {uploading ? 'Reading the file…' : 'Upload a file'}
             </button>
-            <button className="btn primary" onClick={() => start(idea)} disabled={busy || !idea.trim()}>{busy ? 'Opening…' : 'Draft the rules'}</button>
+            <button className="btn primary" onClick={() => aiReady ? start(idea) : openAiConnect()} disabled={busy || !idea.trim()}>{busy ? 'Opening…' : 'Draft the rules'}</button>
           </div>
         </div>
         {uploading && <p className="field-note">Turning {uploading} into rules. This can take up to a minute.</p>}

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import type { Health, Proposal } from './types'
+import { AiConnect } from './components/AiConnect'
 import { Build } from './components/Build'
+import { getAi, onAiChange } from './lib/aiSettings'
 import { Paper } from './components/Paper'
 import { TestBot } from './components/TestBot'
 import { Workspace } from './components/Workspace'
@@ -34,6 +36,8 @@ export default function App() {
   const [idea, setIdea] = useState<string | undefined>()
   const [imported, setImported] = useState<Proposal | undefined>()
   const [health, setHealth] = useState<Health | null>(null)
+  const [aiOpen, setAiOpen] = useState(false)
+  const [aiVersion, setAiVersion] = useState(0)
 
   useEffect(() => {
     const onHash = () => { setRoute(parseRoute()); scrollTo(0, 0) }
@@ -46,7 +50,10 @@ export default function App() {
       setHealth({ ok: false, ai: { provider: '-', model: '-', available: false, detail: 'Server unreachable.' } }))
     check()
     const t = setInterval(check, 30000)
-    return () => clearInterval(t)
+    const off = onAiChange(() => { check(); setAiVersion(v => v + 1) })
+    const show = () => setAiOpen(true)
+    window.addEventListener('purple:connect-ai', show)
+    return () => { clearInterval(t); off(); window.removeEventListener('purple:connect-ai', show) }
   }, [])
 
   const go = (hash: string) => { if (location.hash !== hash) location.hash = hash; else setRoute(parseRoute()) }
@@ -70,19 +77,24 @@ export default function App() {
             <a key={s.page} href={s.hash} className={section === s.page ? 'on' : ''} aria-current={section === s.page ? 'page' : undefined}>{s.label}</a>
           ))}
         </nav>
-        <span className="scope" title={health?.ai.detail}>NSE daily prices, research only</span>
+        <button className={`ai-status ${health?.ai.available ? 'on' : 'off'}`} onClick={() => setAiOpen(true)}
+          title={health?.ai.detail} aria-label={health?.ai.available ? `AI connected: ${health.ai.provider} ${health.ai.model}. Change AI` : 'Connect an AI'}>
+          <span className={`status-dot ${health?.ai.available ? 'on' : 'off'}`} aria-hidden />
+          {health?.ai.available ? `AI: ${getAi() ? getAi()!.provider : health.ai.provider}` : 'Connect an AI'}
+        </button>
       </header>
+      <AiConnect key={aiOpen ? 'open' : 'closed'} open={aiOpen} onClose={() => setAiOpen(false)} />
       <main id="main" className="main" tabIndex={-1}>
         {route.page === 'strategy' ? (
-          <Workspace key={route.id} id={route.id} initialIdea={idea} initialProposal={imported} health={health}
+          <Workspace key={`${route.id}-${aiVersion}`} id={route.id} initialIdea={idea} initialProposal={imported} health={health}
             onBack={() => { setIdea(undefined); setImported(undefined); go('#/build') }} onRenamed={() => {}}
             onTest={vid => go(`#/test/version:${vid}`)} />
         ) : route.page === 'build' ? (
-          <Build health={health} onOpen={open} onTest={bot => go(`#/test/${bot}`)} />
+          <Build key={aiVersion} health={health} onOpen={open} onTest={bot => go(`#/test/${bot}`)} />
         ) : route.page === 'paper' ? (
           <Paper accountId={route.id} onSelect={id => go(`#/paper/${id}`)} onTest={() => go('#/test')} />
         ) : (
-          <TestBot key={route.bot ?? 'none'} initialBot={route.bot}
+          <TestBot key={`${route.bot ?? 'none'}-${aiVersion}`} initialBot={route.bot}
             onPaperCreated={id => go(`#/paper/${id}`)} onBuild={() => go('#/build')} />
         )}
       </main>

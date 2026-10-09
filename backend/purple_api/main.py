@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from pathlib import Path, PurePath
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
 from . import agents, ai, superagent_routes
+from .ai import providers as ai_providers
 from .envfile import load_env
 from .csvdata import CsvError, parse_csv
 from .describe import describe, validate
@@ -24,6 +25,10 @@ class NewStrategy(BaseModel):
 
 class ChatIn(BaseModel):
     message: str
+
+class AiTestIn(BaseModel):
+    provider: str
+    key: str = ""
 
 class BacktestIn(BaseModel):
     strategy_id: str
@@ -60,10 +65,36 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
         return {"valid_shape": True, "strategy": st.model_dump(), "describe": describe(st),
                 "validation": validate(st), "hash": strategy_hash(st)}
 
+    def provider_for(request: Request):
+        """The AI the person connected in this browser (sent per request, never stored), else the server default."""
+        name = request.headers.get("x-ai-provider", "").strip().lower()
+        if not name:
+            return app.state.provider
+        try:
+            return ai_providers.make_provider(name, request.headers.get("x-ai-key", "").strip(),
+                                              request.headers.get("x-ai-model", "").strip())
+        except ai.ProviderError as e:
+            raise HTTPException(400, str(e)) from e
+
     # ----- meta -----
     @app.get("/api/health")
-    def health():
-        return {"ok": True, "ai": app.state.provider.status()}
+    def health(request: Request):
+        return {"ok": True, "ai": provider_for(request).status()}
+
+    @app.get("/api/ai/providers")
+    def ai_provider_list():
+        return ai_providers.CATALOG
+
+    @app.post("/api/ai/test")
+    def ai_test(body: AiTestIn):
+        """Checks a key by listing the provider's models (no generation, no cost). The key is not stored."""
+        try:
+            models = ai_providers.list_models(body.provider.strip().lower(), body.key.strip())
+        except ai.ProviderError as e:
+            raise HTTPException(400, str(e)) from e
+        if not models:
+            raise HTTPException(400, "The key works but no chat models were listed for it.")
+        return {"ok": True, "models": models}
 
     @app.get("/api/templates")
     def templates():
@@ -98,7 +129,7 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
         return {"ok": True}
 
     @app.post("/api/agents/import")
-    async def import_agent(file: UploadFile = File(...)):
+    async def import_agent(request: Request, file: UploadFile = File(...)):
         """The one upload: bots, code, text, spreadsheets, documents. Purple JSON imports exactly;
         everything else is read as text and translated by the AI. Nothing is ever executed."""
         filename = PurePath(file.filename or "upload.txt").name[:120]
@@ -117,10 +148,11 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
         except agents.AgentError as e:
             raise HTTPException(422, str(e)) from e
 
-        if not app.state.provider.status()["available"]:
-            raise HTTPException(503, "The AI is offline, so code can't be translated. Purple strategy .json files still import.")
+        provider = provider_for(request)
+        if not provider.status()["available"]:
+            raise HTTPException(503, "No AI is connected, so this file can't be translated. Connect an AI, or upload a Purple .json file.")
         try:
-            result = ai.translate_agent(text, filename, app.state.provider, is_code=kind == "code")
+            result = ai.translate_agent(text, filename, provider, is_code=kind == "code")
         except ai.ProviderError as e:
             raise HTTPException(503, str(e)) from e
         name = (result["strategy"] or {}).get("name") or PurePath(filename).stem
@@ -165,14 +197,14 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
 
 
     @app.post("/api/strategies/{sid}/ai")
-    def ai_propose(sid: str, body: ChatIn):
+    def ai_propose(sid: str, body: ChatIn, request: Request):
         s = _strategy_or_404(sid)
         msg = body.message.strip()
         if not msg:
             raise HTTPException(400, "Empty message")
         current = Strategy.model_validate(s["draft"]) if s["draft"] else None
         try:
-            result = ai.propose(msg, current, s["chat"], app.state.provider)
+            result = ai.propose(msg, current, s["chat"], provider_for(request))
         except ai.ProviderError as e:
             raise HTTPException(503, str(e)) from e
         reply = result["notes"] or ("" if result["ok"] else result["error"])
