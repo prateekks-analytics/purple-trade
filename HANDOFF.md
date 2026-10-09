@@ -89,6 +89,17 @@ short intro, broker notes collapsed. Checked at 1366 px and 375 px, no console e
 Progress label now names the chosen AI (was hard-coded "local AI, 30–60 s"). Next: one test day RELIANCE.NS 2026-10-01 (free Gemini first), compare
 with Qwen's Buy. Claude.ai subscription can't be used for the API (separate pay-as-you-go Console billing).
 
+## Redesign decision (9 Oct 2026, user)
+
+UI judged "too tacky to show the professor"; use cases "haphazard". Agreed plan (not started — waiting for the user to
+enable Anthropic's `frontend-design` plugin, then build with that skill loaded):
+- One app, no separate SuperAgent mode/warp. Three sections: **Test a bot** (TradingAgents original from GitHub +
+  4 rule bots + saved strategies → backtest → plain-English verdict → paper trade), **Build your own** (idea/file →
+  rules), **Paper accounts**.
+- Hide Purple's "Analyst Team" rebuild and the not-runnable CrewAI card; Deploy becomes a small "Download code" link.
+- Backtest and paper trading must be deliberate, easy to follow, and easy to interpret (explain the result).
+- Baseline before redesign: commit 82579f0.
+
 ## Other pending user decisions
 
 - Full in-app TradingAgents run (~10–20 min) — ask before doing it.
