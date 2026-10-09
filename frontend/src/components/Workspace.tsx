@@ -9,8 +9,9 @@ import { DataPicker, Results } from './Results'
 
 let proposalKey = 0
 
-export function Workspace({ id, initialIdea, initialProposal, health, onBack, onRenamed }: {
+export function Workspace({ id, initialIdea, initialProposal, health, onBack, onRenamed, onTest }: {
   id: string; initialIdea?: string; initialProposal?: Proposal; health: Health | null; onBack: () => void; onRenamed: () => void
+  onTest: (versionId: string) => void
 }) {
   const [doc, setDoc] = useState<StrategyDoc | null>(null)
   const [draft, setDraft] = useState<Strategy | null>(null)
@@ -141,7 +142,7 @@ export function Workspace({ id, initialIdea, initialProposal, health, onBack, on
     try {
       const d = await api.approve(id)
       setDoc(prev => (prev ? { ...d, draft: prev.draft } : d))
-      setToast({ kind: 'ok', text: `Saved as version ${d.versions[0].number}. It can't be changed; keep editing to make the next one.` })
+      setToast({ kind: 'ok', text: `Saved version ${d.versions[0].number}. It is now fixed; further edits become the next version.` })
     } catch (e) {
       setToast({ kind: 'err', text: e instanceof ApiError ? (e.details.join(' ') || e.message) : String(e) })
     }
@@ -199,7 +200,7 @@ export function Workspace({ id, initialIdea, initialProposal, health, onBack, on
 
       <main className="canvas">
         <div className="canvas-head">
-          <button className="link-btn back" onClick={onBack} aria-label="All strategies">← Strategies</button>
+          <button className="link-btn back" onClick={onBack}>All strategies</button>
           {draft ? (
             <input className="title-input" value={draft.name} aria-label="Strategy name" maxLength={120}
               onChange={e => edit({ ...draft, name: e.target.value })} />
@@ -217,11 +218,12 @@ export function Workspace({ id, initialIdea, initialProposal, health, onBack, on
                 {doc.versions.map(x => <option key={x.id} value={x.id}>Version {x.number} · {x.created_at.slice(0, 10)}</option>)}
               </select>
             )}
-            {shown && <button className="btn ghost sm" onClick={download} title="Download these rules as a Purple .json file (re-uploadable)">Download JSON</button>}
+            {shown && <button className="link-btn" onClick={download} title="Download these rules as a Purple .json file you can upload again">Download rules (.json)</button>}
+            {latest && <button className="btn quiet sm" onClick={() => onTest(versionId ?? latest.id)}>Test {versionId ? 'this' : 'latest'} version</button>}
             {versionId && versionBody ? (
-              <button className="btn ghost sm" onClick={() => edit({ ...versionBody, questions: [] })}>Edit from this version</button>
+              <button className="btn quiet sm" onClick={() => edit({ ...versionBody, questions: [] })}>Edit from this version</button>
             ) : (
-              <button className="btn sm" onClick={saveVersion} disabled={!canSave} title={saveHint || 'Freeze these rules as a version'}>
+              <button className="btn primary sm" onClick={saveVersion} disabled={!canSave} title={saveHint || 'Freeze these rules as a version'}>
                 Save version{doc.versions.length ? ` ${doc.versions.length + 1}` : ''}
               </button>
             )}
@@ -233,7 +235,7 @@ export function Workspace({ id, initialIdea, initialProposal, health, onBack, on
           <details className="source-panel" open={showSource} onToggle={e => setShowSource((e.target as HTMLDetailsElement).open)}>
             <summary>
               Uploaded file: <b>{doc.source.filename}</b>
-              <span className="muted small"> · {doc.source.kind === 'purple-json' ? 'imported exactly' : 'translated by AI — compare with the rules below'} · never executed</span>
+              <span className="sub"> {doc.source.kind === 'purple-json' ? 'Imported exactly.' : 'Translated by the AI: compare it with the rules below.'} The file was read, never run.</span>
             </summary>
             <pre><code>{doc.source.content}</code></pre>
           </details>
@@ -259,9 +261,9 @@ export function Workspace({ id, initialIdea, initialProposal, health, onBack, on
                 ))}
               </div>
             )}
-            {!versionId && v && v.errors.filter(e => !e.includes('open question')).map((e, i) => <div key={i} className="alert err">✕ {e}</div>)}
-            {!versionId && v && v.warnings.map((w, i) => <div key={i} className="alert warn">⚠ {w}</div>)}
-            {!versionId && review && !review.valid_shape && review.shape_errors?.map((e, i) => <div key={i} className="alert err">✕ {e}</div>)}
+            {!versionId && v && v.errors.filter(e => !e.includes('open question')).map((e, i) => <div key={i} className="alert err" role="alert">{e}</div>)}
+            {!versionId && v && v.warnings.map((w, i) => <div key={i} className="alert warn">{w}</div>)}
+            {!versionId && review && !review.valid_shape && review.shape_errors?.map((e, i) => <div key={i} className="alert err" role="alert">{e}</div>)}
 
             <div className="view-toggle" role="tablist" aria-label="Rules view">
               <button role="tab" aria-selected={view === 'rules'} className={view === 'rules' ? 'on' : ''} onClick={() => setView('rules')}>Rules</button>
@@ -288,12 +290,13 @@ export function Workspace({ id, initialIdea, initialProposal, health, onBack, on
 
             <section className="test-section" aria-label="Backtest results">
               <div className="test-head">
-                <h2>Results {result && <span className={`badge ${result.mode === 'approved' ? 'ok' : ''}`}>{result.mode === 'approved' ? `version ${doc.versions.find(x => x.id === versionId)?.number ?? ''}` : 'draft'}</span>}</h2>
+                <h2>Backtest {result && <span className={`badge ${result.mode === 'approved' ? 'ok' : ''}`}>{result.mode === 'approved' ? `Version ${doc.versions.find(x => x.id === versionId)?.number ?? ''}` : 'Current draft'}</span>}</h2>
+                <p className="field-note">Re-runs automatically after every change. Same trading rules as Test a bot.</p>
                 <DataPicker datasets={datasets} value={datasetId}
                   onChange={d => { setDatasetId(d); safeSet(`purple.dataset.${id}`, d) }}
                   onUploaded={d => { setDatasets(ds => [d, ...ds.filter(x => x.id !== d.id)]); setDatasetId(d.id); safeSet(`purple.dataset.${id}`, d.id) }} />
               </div>
-              <Results result={result} running={running} error={runError} />
+              <Results result={result} running={running} error={runError} bot={shown.name || 'These rules'} />
             </section>
           </>
         )}

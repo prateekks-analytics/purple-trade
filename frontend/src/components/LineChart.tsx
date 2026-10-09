@@ -13,6 +13,14 @@ interface Props {
   baseline?: number
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+/** Day and month for short spans, month and year for long ones. */
+function tickLabel(iso: string, n: number) {
+  const [y, m, d] = iso.split('-')
+  const mon = MONTHS[Number(m) - 1] ?? m
+  return n <= 90 ? `${Number(d)} ${mon}` : `${mon} ${y}`
+}
+
 const PAD = { top: 12, right: 64, bottom: 26, left: 8 }
 
 function niceTicks(min: number, max: number, count = 4) {
@@ -74,13 +82,34 @@ export function LineChart({ dates, series, markers = [], height = 240, format, a
     setHover(Math.max(0, Math.min(n - 1, i)))
   }
 
+  const onKey = (e: React.KeyboardEvent<SVGSVGElement>) => {
+    if (n === 0) return
+    const step = e.shiftKey ? 10 : 1
+    if (e.key === 'ArrowRight') setHover(h => Math.min(n - 1, (h ?? -1) + step))
+    else if (e.key === 'ArrowLeft') setHover(h => Math.max(0, (h ?? n) - step))
+    else if (e.key === 'Home') setHover(0)
+    else if (e.key === 'End') setHover(n - 1)
+    else if (e.key === 'Escape') setHover(null)
+    else return
+    e.preventDefault()
+  }
+
   const markersAtHover = hover === null ? [] : markers.filter(m => m.index === hover)
   const tipLeft = hover !== null && x(hover) > width * 0.6
 
   return (
-    <div className="chart" style={{ height }}>
+    <div className="chart">
+      {series.length > 1 && (
+        <div className="legend">
+          {series.map(s => (
+            <span key={s.key}><i style={{ background: s.color }} className={s.dashed ? 'dashed' : ''} aria-hidden />{s.label}</span>
+          ))}
+        </div>
+      )}
+      <div className="chart-plot" style={{ height }}>
       <svg ref={ref} role="img" aria-label={ariaLabel} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none"
         width="100%" height={height}
+        tabIndex={0} onKeyDown={onKey} onBlur={() => setHover(null)}
         onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
         {ticks.map(t => (
           <g key={t}>
@@ -92,7 +121,7 @@ export function LineChart({ dates, series, markers = [], height = 240, format, a
           <line x1={PAD.left} x2={width - PAD.right} y1={y(baseline)} y2={y(baseline)} className="baseline" />
         )}
         {dateTicks.map(({ d, i }) => (
-          <text key={d} x={x(i)} y={height - 8} className="axis-label" textAnchor="middle">{d.slice(0, 7)}</text>
+          <text key={d} x={x(i)} y={height - 8} className="axis-label" textAnchor="middle">{tickLabel(d, n)}</text>
         ))}
         {series.map(s => (
           <path key={s.key} d={path(s.values)} fill="none" stroke={s.color} strokeWidth={2}
@@ -114,15 +143,8 @@ export function LineChart({ dates, series, markers = [], height = 240, format, a
           </g>
         )}
       </svg>
-      {series.length > 1 && (
-        <div className="legend" aria-hidden>
-          {series.map(s => (
-            <span key={s.key}><i style={{ background: s.color }} className={s.dashed ? 'dashed' : ''} />{s.label}</span>
-          ))}
-        </div>
-      )}
       {hover !== null && (
-        <div className="tooltip" style={tipLeft ? { right: `${((width - x(hover)) / width) * 100 + 2}%` } : { left: `${(x(hover) / width) * 100 + 2}%` }}>
+        <div className="tooltip" role="status" style={tipLeft ? { right: `${((width - x(hover)) / width) * 100 + 2}%` } : { left: `${(x(hover) / width) * 100 + 2}%` }}>
           <div className="tt-date">{dates[hover]}</div>
           {series.map(s => (
             <div key={s.key} className="tt-row"><i style={{ background: s.color }} />{s.label}<b>{format(s.values[hover])}</b></div>
@@ -132,6 +154,7 @@ export function LineChart({ dates, series, markers = [], height = 240, format, a
           ))}
         </div>
       )}
+      </div>
     </div>
   )
 }
