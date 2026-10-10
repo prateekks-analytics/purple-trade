@@ -598,3 +598,4 @@ select.chip-select.rel { background: var(--surface-2); color: var(--ink); min-wi
 }
 .instrument-stock { margin-left: auto; text-align: right; }
 @media (max-width: 640px) { .side-ai span { display: none; } .side-ai { width: auto; } }
+.panel > .field-note { padding: 0 18px 16px; }
