@@ -54,6 +54,7 @@ export const api = {
   approve: (id: string) => req<StrategyDoc>(`/api/strategies/${id}/approve`, json('POST')),
   getVersion: (id: string) => req<{ id: string; number: number; body: Strategy; review: Review }>(`/api/versions/${id}`),
   datasets: () => req<Dataset[]>('/api/datasets'),
+  datasetBars: (id: string) => req<{ date: string; open: number; high: number; low: number; close: number; volume: number }[]>(`/api/datasets/${id}/bars`),
   uploadDataset: (file: File, symbol: string, sourceNote: string) => {
     const fd = new FormData()
     fd.append('file', file)

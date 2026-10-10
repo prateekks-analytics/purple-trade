@@ -4,6 +4,7 @@ import type { BacktestResult, Dataset, Job, Strategy, SuperAgentInfo, TeamResult
 import { fmtMoney } from '../lib/tree'
 import { DecisionLog, DownloadCode, errText, JobProgress, useJob } from './AgentBits'
 import { Assumptions, DataPicker, ResultDetail, VerdictPanel } from './Results'
+import { CandleChart, RangeTabs, sliceRange, type Bar as PriceBar, type RangeKey } from './Charts'
 import { openAiConnect } from '../lib/aiSettings'
 
 /** One row in the bot chooser: a curated agent, a rule bot, or a saved strategy version. */
@@ -37,7 +38,7 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
 }) {
   const [bots, setBots] = useState<Bot[] | null>(null)
   const [botId, setBotId] = useState<string | null>(initialBot ?? null)
-  const [choosing, setChoosing] = useState(!initialBot)
+
   const [datasets, setDatasets] = useState<Dataset[]>([])
   const [datasetId, setDatasetId] = useState<string | null>(null)
   const [symbol, setSymbol] = useState('RELIANCE')
@@ -52,6 +53,8 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
   const [busy, setBusy] = useState(false)
   const [capital, setCapital] = useState(100000)
   const [paperBusy, setPaperBusy] = useState(false)
+  const [bars, setBars] = useState<PriceBar[] | null>(null)
+  const [range, setRange] = useState<RangeKey>('1Y')
 
   useEffect(() => {
     let alive = true
@@ -102,7 +105,7 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
   const clear = () => { setResult(null); setTeamResult(null); setJob(null); setErr(null) }
   useEffect(clear, [botId, datasetId, symbol, days, engineId, analyses.join()])
 
-  const pick = (id: string) => { setBotId(id); setChoosing(false) }
+  const pick = (id: string) => setBotId(id)
 
   const minutes = engine ? [days * engine.minutes[0], days * engine.minutes[1]] : [days * 10, days * 20]
   const cost = engine?.paid && engine.cost_per_day ? [engine.cost_per_day[0] * days, engine.cost_per_day[1] * days] : null
@@ -131,192 +134,189 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
     } catch (e) { setErr(errText(e)); setPaperBusy(false) }
   }
 
-  const step2Done = Boolean(bot)
-  const step3Done = Boolean(shown)
+  // Price history for the chart: the chosen data before a run, the data the run used afterwards.
+  const barsFor = shown?.dataset.id ?? (isAI ? null : datasetId)
+  useEffect(() => {
+    setBars(null)
+    if (barsFor) api.datasetBars(barsFor).then(setBars).catch(() => setBars(null))
+  }, [barsFor])
+
+  const groupTitle = GROUPS.find(g => g.id === bot?.group)?.title.replace(/s$/, '')
+  const stockLabel = stock.replace(/^the /, '').replace(/^./, c => c.toUpperCase())
 
   return (
-    <div className="page">
-      <header className="page-head">
-        <h1>Test a bot</h1>
-        <p className="lede">Pick a bot, choose the stock and period, run a backtest on past prices, then read what the result means. If it holds up, follow it with virtual money in a paper account.</p>
+    <div className="page wide">
+      <header className="page-head row">
+        <div>
+          <h1>Test a bot</h1>
+          <p className="lede">Choose a bot, set up the test on the right, run it, and read what the result means.</p>
+        </div>
       </header>
 
-      <ol className="steps">
-        {/* ---------- 1. choose ---------- */}
-        <li className={`step ${bot && !choosing ? 'done' : 'current'}`}>
-          <div className="step-mark" aria-hidden>1</div>
-          <div className="step-body">
-            <h2>Choose a bot</h2>
-            {bots === null ? <p className="field-note">Loading bots…</p> : bot && !choosing ? (
-              <div className="chosen">
-                <div>
-                  <b>{bot.title}</b>
-                  <span className="sub"> {GROUPS.find(g => g.id === bot.group)?.title.replace(/s$/, '')}{bot.group === 'mine' ? `, ${bot.speed.toLowerCase()}` : ''}</span>
-                </div>
-                <button className="btn quiet" onClick={() => setChoosing(true)}>Change bot</button>
-              </div>
-            ) : (
-              <div className="bot-groups">
-                {GROUPS.map(g => {
-                  const list = bots.filter(b => b.group === g.id)
-                  return (
-                    <fieldset key={g.id} className="bot-group">
-                      <legend>{g.title}</legend>
-                      <p className="field-note">{g.note}</p>
-                      {list.length === 0 ? (
-                        <p className="empty-line">{g.id === 'mine'
-                          ? <>No saved versions yet. <button className="link-btn" onClick={onBuild}>Build your own</button> and save a version to test it here.</>
-                          : 'Not installed on this computer.'}</p>
-                      ) : list.map(b => (
-                        <label key={b.id} className={`bot-row ${botId === b.id ? 'on' : ''}`}>
-                          <input type="radio" name="bot" checked={botId === b.id} onChange={() => pick(b.id)} />
-                          <span className="bot-main">
-                            <b>{b.title}</b>
-                            {b.entry ? <span className="bot-rules"><span>Buys when {b.entry}</span><span>Sells when {b.exit}</span></span>
-                              : <span className="bot-blurb">{b.blurb}</span>}
-                          </span>
-                          <span className="bot-speed">{b.speed}</span>
-                        </label>
-                      ))}
-                    </fieldset>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </li>
-
-        {/* ---------- 2. set up ---------- */}
-        <li className={`step ${!step2Done ? 'todo' : step3Done ? 'done' : 'current'}`}>
-          <div className="step-mark" aria-hidden>2</div>
-          <div className="step-body">
-            <h2>Set up the test</h2>
-            {!bot ? <p className="field-note">Choose a bot first.</p> : (
-              <div className="setup">
-                <div className="setup-fields">
-                  {isAI ? (
-                    <>
-                      <div className="field">
-                        <label htmlFor="ta-symbol">NSE stock symbol</label>
-                        <input id="ta-symbol" value={symbol} onChange={e => setSymbol(e.target.value.toUpperCase())} />
-                        <p className="field-note">Prices and news come from Yahoo Finance as {symbol.includes('.') ? symbol : `${symbol || '…'}.NS`} (unofficial source).</p>
-                      </div>
-                      <div className="field">
-                        <span className="label" id="analysts-label">Analysts</span>
-                        <div className="toggles" role="group" aria-labelledby="analysts-label">
-                          {bot.info!.analyses.map(x => {
-                            const on = analyses.includes(x.id)
-                            return (
-                              <button key={x.id} type="button" className={`toggle ${on ? 'on' : ''}`} aria-pressed={on} disabled={!x.available || (on && analyses.length === 1)}
-                                title={x.detail} onClick={() => setAnalyses(a => on ? a.filter(y => y !== x.id) : [...a, x.id])}>
-                                {x.label.replace(' / technical', '').replace(' analyst', '')}
-                              </button>
-                            )
-                          })}
-                        </div>
-                        <p className="field-note">Each extra analyst adds time per day.</p>
-                      </div>
-                      <div className="field">
-                        <label htmlFor="ta-days">Trading days to test</label>
-                        <select id="ta-days" value={days} onChange={e => setDays(+e.target.value)}>
-                          {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n} most recent day{n > 1 ? 's' : ''}</option>)}
-                        </select>
-                        <p className="field-note">The agent decides each day using only information up to that day.</p>
-                      </div>
-                      {engines.length > 0 && (
-                        <div className="field">
-                          <label htmlFor="ta-engine">AI model</label>
-                          <select id="ta-engine" value={engineId} onChange={e => { setEngineId(e.target.value); setPaidOk(false) }}>
-                            {engines.map(e => <option key={e.id} value={e.id} disabled={!e.available}>{e.label}{e.available ? '' : ' (needs an API key)'}</option>)}
-                          </select>
-                          <p className="field-note">{engine ? (engine.available ? engine.note : engine.why) : ''}</p>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <DataPicker datasets={datasets} value={datasetId} onChange={setDatasetId}
-                        onUploaded={d => { setDatasets(x => [d, ...x.filter(y => y.id !== d.id)]); setDatasetId(d.id) }} />
-                      {bot.entry && (
-                        <div className="rules-readout">
-                          <p><span className="side buy">Buy</span> when {bot.entry}</p>
-                          <p><span className="side sell">Sell</span> when {bot.exit}</p>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-                <aside className="setup-rules" aria-label="How the test trades">
-                  <h3>How the test trades</h3>
-                  <Assumptions fee={bot.costs.fee_bps} slippage={bot.costs.slippage_bps}
-                    extra={`Starts with ${fmtMoney(bot.capital)} of virtual money and puts ${bot.sizePct >= 100 ? 'the whole account' : `${bot.sizePct}% of the account`} into each trade.`} />
-                </aside>
-              </div>
-            )}
-          </div>
-        </li>
-
-        {/* ---------- 3. run ---------- */}
-        <li className={`step ${!step2Done ? 'todo' : step3Done ? 'done' : 'current'}`}>
-          <div className="step-mark" aria-hidden>3</div>
-          <div className="step-body">
-            <h2>Run the backtest</h2>
-            {!bot ? <p className="field-note">Set up the test first.</p> : (
-              <>
-                <p className="run-summary">
-                  {isAI
-                    ? <>Ask {bot.title} to decide each of the last {days} trading day{days > 1 ? 's' : ''} for {symbol || '…'}. Expect about {minutes[0]}–{minutes[1]} minutes{cost ? `; estimated cost $${cost[0].toFixed(2)}–${cost[1].toFixed(2)} of API credit` : ', free'}.</>
-                    : <>Replay {bot.title} over {dataset ? `${dataset.rows} trading days of ${stockName(dataset)} (${dataset.first_date} to ${dataset.last_date})` : 'the chosen prices'}. Takes a second, free.</>}
-                </p>
-                {isAI && cost && (
-                  <label className="confirm">
-                    <input type="checkbox" checked={paidOk} onChange={e => setPaidOk(e.target.checked)} />
-                    <span>I approve spending up to about ${cost[1].toFixed(2)} of my API credit on this run.</span>
+      <div className="trade-grid">
+        {/* ---------- bot list ---------- */}
+        <aside className="panel watch" aria-label="Bots">
+          <h2 className="panel-title">Bots</h2>
+          {bots === null ? <p className="field-note">Loading bots…</p> : GROUPS.map(g => {
+            const list = bots.filter(b => b.group === g.id)
+            return (
+              <fieldset key={g.id} className="watch-group">
+                <legend>{g.title}</legend>
+                {list.length === 0 ? (
+                  <p className="watch-empty">{g.id === 'mine'
+                    ? <>No saved versions yet. <button className="link-btn" onClick={onBuild}>Build one</button></>
+                    : 'Not installed on this computer.'}</p>
+                ) : list.map(b => (
+                  <label key={b.id} className={`watch-row ${botId === b.id ? 'on' : ''}`} title={b.entry ? `Buys when ${b.entry}. Sells when ${b.exit}.` : b.blurb}>
+                    <input type="radio" name="bot" className="visually-hidden" checked={botId === b.id} onChange={() => pick(b.id)} />
+                    <span className="watch-name">{b.title}</span>
+                    <span className="watch-meta">{b.group === 'ai' ? 'AI agent, slow' : b.group === 'mine' ? b.speed : 'Rules, instant'}</span>
                   </label>
-                )}
-                {isAI && engine && !engine.available && <p className="error-text">{engine.why} <button className="link-btn" onClick={openAiConnect}>Connect an AI</button></p>}
-                <div className="run-row">
-                  <button className="btn primary" onClick={run} disabled={!ready || busy || running}>{busy ? 'Starting…' : running ? 'Running…' : shown ? 'Run again' : 'Run backtest'}</button>
-                </div>
-                {live && running && <JobProgress job={live} label={`${bot.title} is working`} note="You can leave this page open; decisions already made are kept if the run stops." />}
-              </>
-            )}
-            {err && <p className="error-text" role="alert">{err}</p>}
-          </div>
-        </li>
+                ))}
+              </fieldset>
+            )
+          })}
+        </aside>
 
-        {/* ---------- 4. verdict ---------- */}
-        <li className={`step ${shown ? 'current' : 'todo'}`}>
-          <div className="step-mark" aria-hidden>4</div>
-          <div className="step-body">
-            <h2>Read the verdict</h2>
-            {!shown || !bot ? <p className="field-note">The result appears here in plain English, with the chart and every trade.</p> : (
-              <>
-                <VerdictPanel result={shown} bot={bot.title} stock={stock} />
-                <ResultDetail result={shown} />
-                {teamResult && teamResult.decisions.length > 0 && (
-                  <section className="sub-section">
-                    <h3>Day-by-day decisions</h3>
-                    <DecisionLog decisions={[...teamResult.decisions].reverse()} />
-                  </section>
-                )}
-                <section className="next">
-                  <h3>Next: follow it with virtual money</h3>
-                  <p>A paper account starts on the latest day in the data and follows this bot forward one trading day at a time. No real orders are placed.</p>
-                  <div className="run-row">
-                    <div className="field inline">
-                      <label htmlFor="paper-capital">Starting money (₹)</label>
-                      <input id="paper-capital" type="number" min={1000} step={1000} value={capital} onChange={e => setCapital(Math.max(1000, +e.target.value || 0))} />
-                    </div>
-                    <button className="btn primary" onClick={startPaper} disabled={paperBusy}>{paperBusy ? 'Creating…' : `Start paper account with ${fmtMoney(capital)}`}</button>
+        {/* ---------- chart, verdict ---------- */}
+        <section className="trade-main" aria-label="Chart and result">
+          {!bot ? (
+            <div className="panel empty-main">
+              <h2>Pick a bot to start</h2>
+              <p>Rule bots run instantly on past prices. The AI agent takes minutes per trading day.</p>
+            </div>
+          ) : (
+            <>
+              <div className="panel instrument">
+                <div className="instrument-head">
+                  <div className="instrument-id">
+                    <p className="sub">{groupTitle}</p>
+                    <h2 className="instrument-title">{bot.title}</h2>
+                    {bot.entry ? (
+                      <p className="rule-line"><span className="side buy">Buy</span> {bot.entry}<span className="side sell">Sell</span> {bot.exit}</p>
+                    ) : <p className="rule-line sub">{bot.blurb}</p>}
                   </div>
+                  <div className="instrument-stock">
+                    <span className="sub">Stock</span>
+                    <b>{stockLabel}</b>
+                    {bars?.length ? <span className="num">₹{bars[bars.length - 1].close.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span> : null}
+                  </div>
+                </div>
+                {!shown && (bars?.length ? (
+                  <>
+                    <div className="detail-head"><span className="sub">Daily prices. Run the backtest to see its trades.</span><RangeTabs value={range} onChange={setRange} total={bars.length} /></div>
+                    <div className="pad-x"><CandleChart bars={sliceRange(bars, range)} /></div>
+                  </>
+                ) : <p className="field-note pad">{isAI ? 'Prices are downloaded for the symbol when the run starts.' : 'Loading prices…'}</p>)}
+              </div>
+
+              {live && running && <JobProgress job={live} label={`${bot.title} is working`} note="You can leave this page open; decisions already made are kept if the run stops." />}
+
+              {shown && (
+                <>
+                  <ResultDetail result={shown} bars={bars} defaultTab="price" />
+                  <VerdictPanel result={shown} bot={bot.title} stock={stock} />
+                  {teamResult && teamResult.decisions.length > 0 && (
+                    <section className="panel sub-section">
+                      <h3 className="panel-title">Day-by-day decisions</h3>
+                      <DecisionLog decisions={[...teamResult.decisions].reverse()} />
+                    </section>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </section>
+
+        {/* ---------- ticket ---------- */}
+        <aside className="panel ticket" aria-label="Backtest ticket">
+          <h2 className="panel-title">Backtest ticket</h2>
+          {!bot ? <p className="field-note">Choose a bot from the list.</p> : (
+            <>
+              <div className="ticket-fields">
+                {isAI ? (
+                  <>
+                    <div className="field">
+                      <label htmlFor="ta-symbol">NSE symbol</label>
+                      <input id="ta-symbol" value={symbol} onChange={e => setSymbol(e.target.value.toUpperCase())} />
+                      <p className="field-note">Prices and news from Yahoo Finance as {symbol.includes('.') ? symbol : `${symbol || '…'}.NS`}.</p>
+                    </div>
+                    <div className="field">
+                      <span className="label" id="analysts-label">Analysts</span>
+                      <div className="toggles" role="group" aria-labelledby="analysts-label">
+                        {bot.info!.analyses.map(x => {
+                          const on = analyses.includes(x.id)
+                          return (
+                            <button key={x.id} type="button" className={`toggle ${on ? 'on' : ''}`} aria-pressed={on} disabled={!x.available || (on && analyses.length === 1)}
+                              title={x.detail} onClick={() => setAnalyses(a => on ? a.filter(y => y !== x.id) : [...a, x.id])}>
+                              {x.label.replace(' / technical', '').replace(' analyst', '')}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="ta-days">Trading days</label>
+                      <select id="ta-days" value={days} onChange={e => setDays(+e.target.value)}>
+                        {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n} most recent day{n > 1 ? 's' : ''}</option>)}
+                      </select>
+                    </div>
+                    {engines.length > 0 && (
+                      <div className="field">
+                        <label htmlFor="ta-engine">AI model</label>
+                        <select id="ta-engine" value={engineId} onChange={e => { setEngineId(e.target.value); setPaidOk(false) }}>
+                          {engines.map(e => <option key={e.id} value={e.id} disabled={!e.available}>{e.label}{e.available ? '' : ' (not connected)'}</option>)}
+                        </select>
+                        {engine && !engine.available && <p className="error-text">{engine.why} <button className="link-btn" onClick={openAiConnect}>Connect an AI</button></p>}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <DataPicker datasets={datasets} value={datasetId} onChange={setDatasetId}
+                    onUploaded={d => { setDatasets(x => [d, ...x.filter(y => y.id !== d.id)]); setDatasetId(d.id) }} />
+                )}
+              </div>
+
+              <dl className="ticket-summary">
+                <div><dt>Period</dt><dd>{isAI ? `Last ${days} trading day${days > 1 ? 's' : ''}` : dataset ? `${dataset.first_date} to ${dataset.last_date}` : '—'}</dd></div>
+                <div><dt>Starting money</dt><dd className="num">{fmtMoney(bot.capital)}</dd></div>
+                <div><dt>Per trade</dt><dd>{bot.sizePct >= 100 ? 'Whole account' : `${bot.sizePct}% of account`}</dd></div>
+                <div><dt>Costs per side</dt><dd>{((bot.costs.fee_bps + bot.costs.slippage_bps) / 100).toFixed(2)}%</dd></div>
+                <div><dt>Time</dt><dd>{isAI ? `${minutes[0]}–${minutes[1]} min` : 'About a second'}</dd></div>
+                <div><dt>AI cost</dt><dd>{cost ? `$${cost[0].toFixed(2)}–${cost[1].toFixed(2)}` : 'Free'}</dd></div>
+              </dl>
+              {isAI && cost && (
+                <label className="confirm">
+                  <input type="checkbox" checked={paidOk} onChange={e => setPaidOk(e.target.checked)} />
+                  <span>I approve spending up to about ${cost[1].toFixed(2)} of my API credit.</span>
+                </label>
+              )}
+              <button className="btn primary block" onClick={run} disabled={!ready || busy || running}>
+                {busy ? 'Starting…' : running ? 'Running…' : shown ? 'Run again' : 'Run backtest'}
+              </button>
+              {err && <p className="error-text" role="alert">{err}</p>}
+
+              <details className="ticket-rules">
+                <summary>How the test trades</summary>
+                <Assumptions fee={bot.costs.fee_bps} slippage={bot.costs.slippage_bps} />
+              </details>
+
+              {shown && (
+                <div className="ticket-paper">
+                  <h3>Paper trade this bot</h3>
+                  <p className="field-note">Follows the bot forward with virtual money from the latest day. No real orders.</p>
+                  <div className="field">
+                    <label htmlFor="paper-capital">Starting money (₹)</label>
+                    <input id="paper-capital" type="number" min={1000} step={1000} value={capital} onChange={e => setCapital(Math.max(1000, +e.target.value || 0))} />
+                  </div>
+                  <button className="btn cta block" onClick={startPaper} disabled={paperBusy}>{paperBusy ? 'Creating…' : `Start paper account, ${fmtMoney(capital)}`}</button>
                   <DownloadCode agentId={bot.id} symbol={isAI ? symbol : dataset?.symbol ?? 'INFY'} />
-                </section>
-              </>
-            )}
-          </div>
-        </li>
-      </ol>
+                </div>
+              )}
+            </>
+          )}
+        </aside>
+      </div>
     </div>
   )
 }

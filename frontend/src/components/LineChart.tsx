@@ -11,6 +11,7 @@ interface Props {
   format: (v: number) => string
   ariaLabel: string
   baseline?: number
+  area?: boolean
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -34,7 +35,7 @@ function niceTicks(min: number, max: number, count = 4) {
   return out
 }
 
-export function LineChart({ dates, series, markers = [], height = 240, format, ariaLabel, baseline }: Props) {
+export function LineChart({ dates, series, markers = [], height = 240, format, ariaLabel, baseline, area }: Props) {
   const ref = useRef<SVGSVGElement>(null)
   const [hover, setHover] = useState<number | null>(null)
   const [width, setWidth] = useState(720)
@@ -52,6 +53,8 @@ export function LineChart({ dates, series, markers = [], height = 240, format, a
     let lo = Infinity, hi = -Infinity
     for (const s of series) for (const v of s.values) { lo = Math.min(lo, v); hi = Math.max(hi, v) }
     if (baseline !== undefined) { lo = Math.min(lo, baseline); hi = Math.max(hi, baseline) }
+    const floor = Math.abs(hi) * 0.004  // a nearly flat line still gets a readable axis
+    if (hi - lo < floor) { const mid = (hi + lo) / 2; lo = mid - floor; hi = mid + floor }
     const pad = (hi - lo) * 0.06 || 1
     return { min: lo - pad, max: hi + pad }
   }, [series, baseline])
@@ -124,6 +127,9 @@ export function LineChart({ dates, series, markers = [], height = 240, format, a
         {dateTicks.map(({ d, i }) => (
           <text key={d} x={x(i)} y={height - 8} className="axis-label" textAnchor="middle">{tickLabel(d, n)}</text>
         ))}
+        {area && series[0] && n > 1 && (
+          <path d={`${path(series[0].values)}L${x(n - 1)},${height - PAD.bottom}L${x(0)},${height - PAD.bottom}Z`} fill={series[0].color} className="area" />
+        )}
         {series.map(s => (
           <path key={s.key} d={path(s.values)} fill="none" stroke={s.color} strokeWidth={2}
             strokeDasharray={s.dashed ? '5 4' : undefined} strokeLinejoin="round" strokeLinecap="round" />

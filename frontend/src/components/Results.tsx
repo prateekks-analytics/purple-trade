@@ -4,6 +4,7 @@ import type { BacktestResult, Dataset } from '../types'
 import { fmtMoney, fmtPct } from '../lib/tree'
 import { readVerdict } from '../lib/verdict'
 import { LineChart, type Marker } from './LineChart'
+import { CandleChart, RangeTabs, sliceRange, type Bar, type RangeKey, type TradeMark } from './Charts'
 
 export function DataPicker({ datasets, value, onChange, onUploaded, label = 'Price data' }: {
   datasets: Dataset[]; value: string | null; onChange: (id: string) => void; onUploaded: (d: Dataset) => void; label?: string
@@ -89,9 +90,21 @@ export function VerdictPanel({ result, bot, stock }: { result: BacktestResult; b
 
 const tone = (v: number | null | undefined) => (v === null || v === undefined ? '' : v > 0 ? 'pos' : v < 0 ? 'neg' : '')
 
-export function ResultDetail({ result }: { result: BacktestResult }) {
+export function ResultDetail({ result, bars, defaultTab = 'equity', title }: {
+  result: BacktestResult; bars?: Bar[] | null; defaultTab?: 'equity' | 'price' | 'trades'; title?: string
+}) {
   const [showAll, setShowAll] = useState(false)
-  const [tab, setTab] = useState<'equity' | 'price' | 'trades'>('equity')
+  const [tab, setTab] = useState<'equity' | 'price' | 'trades'>(defaultTab)
+  const [range, setRange] = useState<RangeKey>('All')
+  const marks = useMemo<TradeMark[]>(() => result.trades.flatMap(t => [
+    { date: t.entry_date, price: t.entry_price, kind: 'buy' as const, label: `${t.qty} at ${t.entry_price.toFixed(2)}. ${t.entry_reason}` },
+    ...(t.exit_date ? [{ date: t.exit_date, price: t.exit_price ?? 0, kind: 'sell' as const, label: `at ${t.exit_price?.toFixed(2)}. ${t.exit_reason}` }] : []),
+  ]), [result])
+  const priceBars = useMemo(() => {
+    if (!bars?.length) return null
+    const from = result.equity[0]?.date, to = result.equity[result.equity.length - 1]?.date
+    return bars.filter(b => b.date >= from && b.date <= to)
+  }, [bars, result])
 
   const view = useMemo(() => {
     const eq = result.equity
@@ -114,10 +127,14 @@ export function ResultDetail({ result }: { result: BacktestResult }) {
   if (view.dates.length < 2) return <p className="field-note">The chart appears after the second trading day.</p>
   const trades = [...result.trades].reverse()
   const shown = showAll ? trades : trades.slice(0, 12)
-  const tabs = [['equity', 'Account value'], ['price', 'Price and trades'], ['trades', `Trade list (${trades.length})`]] as const
+  const tabs = [['price', 'Price and trades'], ['equity', 'Account value'], ['trades', `Trades (${trades.length})`]] as const
+  const eqDates = sliceRange(view.dates, range)
+  const cut = view.dates.length - eqDates.length
 
   return (
     <section className="detail" aria-label="Backtest detail">
+      <div className="detail-head">
+      {title && <h2 className="panel-title">{title}</h2>}
       <div className="tabs" role="tablist" aria-label="Result views">
         {tabs.map(([k, label]) => (
           <button key={k} role="tab" id={`tab-${k}`} aria-selected={tab === k} aria-controls={`panel-${k}`} className={tab === k ? 'on' : ''}
@@ -130,24 +147,28 @@ export function ResultDetail({ result }: { result: BacktestResult }) {
             }}>{label}</button>
         ))}
       </div>
+      {tab !== 'trades' && <RangeTabs value={range} onChange={setRange} total={view.dates.length} />}
+      </div>
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="tab-panel">
         {tab === 'equity' && (
           <>
             <p className="chart-caption">What the account was worth each day, against buying on day one and holding. Hover or use the arrow keys for values.</p>
-            <LineChart dates={view.dates} ariaLabel="Account value over time: this bot against buying and holding"
+            <LineChart dates={eqDates} ariaLabel="Account value over time: this bot against buying and holding" area height={300}
               series={[
-                { key: 's', label: 'This bot', color: 'var(--series-1)', values: view.equity },
-                { key: 'b', label: 'Buy and hold', color: 'var(--series-2)', values: view.bh, dashed: true },
+                { key: 's', label: 'This bot', color: 'var(--series-1)', values: view.equity.slice(cut) },
+                { key: 'b', label: 'Buy and hold', color: 'var(--series-2)', values: view.bh.slice(cut), dashed: true },
               ]}
               baseline={result.metrics.start_equity} format={v => fmtMoney(v)} />
           </>
         )}
         {tab === 'price' && (
           <>
-            <p className="chart-caption">Closing price with each purchase (▲ green) and sale (▼ red). Hover a marker to see which rule fired.</p>
-            <LineChart dates={view.dates} ariaLabel="Closing price with buy and sell markers"
-              series={[{ key: 'c', label: 'Close', color: 'var(--price-line)', values: view.close }]}
-              markers={view.markers} format={v => v.toLocaleString('en-IN', { maximumFractionDigits: 0 })} />
+            <p className="chart-caption">Daily prices with each purchase (▲ green) and sale (▼ red). Hover a marker to see which rule fired.</p>
+            {priceBars?.length ? <CandleChart bars={sliceRange(priceBars, range)} marks={marks} /> : (
+              <LineChart dates={eqDates} ariaLabel="Closing price with buy and sell markers"
+                series={[{ key: 'c', label: 'Close', color: 'var(--price-line)', values: view.close.slice(cut) }]}
+                markers={view.markers.filter(m => m.index >= cut).map(m => ({ ...m, index: m.index - cut }))} format={v => v.toLocaleString('en-IN', { maximumFractionDigits: 0 })} />
+            )}
           </>
         )}
         {tab === 'trades' && (trades.length === 0 ? (

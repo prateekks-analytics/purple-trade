@@ -51,7 +51,7 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
 
   const act = async (fn: () => Promise<PaperView>) => {
     setBusy(true); setErr(null)
-    try { setView(await fn()) } catch (e) { setErr(errText(e)) } finally { setBusy(false) }
+    try { setView(await fn()); window.dispatchEvent(new Event('purple:data')) } catch (e) { setErr(errText(e)) } finally { setBusy(false) }
   }
   const decide = async () => {
     if (!view) return
@@ -85,80 +85,90 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
 
   const m = view?.result.metrics
   const isAI = view && view.agent.kind !== 'rules'
+  const vs = m ? m.total_return_pct - m.buy_hold_return_pct : 0
+  const tone = (v: number) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '')
 
   return (
     <div className="page wide">
-      <header className="page-head">
-        <h1>Paper accounts</h1>
-        <p className="lede">Each account follows one bot with virtual money from the day it was opened. Move it forward a day at a time and read what the bot did and why.</p>
+      <header className="page-head row">
+        <div>
+          <h1>Paper accounts</h1>
+          <p className="lede">Each account follows one bot with virtual money. Move it forward a day at a time and see what the bot did and why.</p>
+        </div>
+        <div className="head-actions"><button className="btn primary" onClick={onTest}>Test another bot</button></div>
       </header>
-      <div className="paper-layout">
-        <nav className="account-list" aria-label="Paper accounts">
-          <ul>
+
+      <div className="trade-grid">
+        <nav className="panel watch" aria-label="Paper accounts">
+          <h2 className="panel-title">Accounts</h2>
+          <ul className="watch-list">
             {(accounts ?? []).map(a => (
               <li key={a.id}>
-                <button className={a.id === accountId ? 'on' : ''} aria-current={a.id === accountId ? 'page' : undefined} onClick={() => onSelect(a.id)}>
-                  <b>{a.name}</b>
-                  <span className="sub">Opened {a.start_date} with {fmtMoney(a.capital)}{a.synthetic ? ', synthetic prices' : ''}</span>
+                <button className={`watch-row ${a.id === accountId ? 'on' : ''}`} aria-current={a.id === accountId ? 'page' : undefined} onClick={() => onSelect(a.id)}>
+                  <span className="watch-name">{a.name}</span>
+                  <span className="watch-meta">Since {a.start_date}{a.synthetic ? ', sample prices' : ''}</span>
                 </button>
               </li>
             ))}
           </ul>
-          <button className="btn quiet" onClick={onTest}>Test another bot</button>
         </nav>
 
-        <div className="account">
+        <section className="trade-main" aria-label="Account">
           {err && <p className="error-text" role="alert">{err}</p>}
-          {!view || !m ? <p className="field-note">{accountId ? 'Loading the account…' : 'Choose an account.'}</p> : (
+          {!view || !m ? <div className="panel empty-main"><p>{accountId ? 'Loading the account…' : 'Choose an account.'}</p></div> : (
             <>
-              <div className="account-head">
-                <h2>{view.account.name}</h2>
-                <p className="sub">Opened {view.account.start_date} with {fmtMoney(view.account.capital)}. Prices up to {view.latest_date}.</p>
-              </div>
-
-              <section className={`today ${(view.today.action ?? 'none').toLowerCase()}`} aria-label="Latest decision">
-                <p className="today-label">Bot's call after the close on {view.today.date}</p>
-                <p className="today-call">{view.today.action ? CALL[view.today.action] : 'Not decided yet'}</p>
-                <p>{todayLine(view)}</p>
-                {view.today.reason && <p className="today-reason">{view.today.reason}</p>}
-              </section>
-
-              <section className="move" aria-label="Move the account forward">
-                <div>
-                  <h3>Move forward</h3>
-                  <p className="field-note">{view.data_note}</p>
+              <div className="panel account-bar">
+                <div className="instrument-id">
+                  <p className="sub">{view.agent.title}</p>
+                  <h2 className="instrument-title">{view.account.name}</h2>
+                  <p className="sub">Opened {view.account.start_date} with {fmtMoney(view.account.capital)}. Prices up to {view.latest_date}.</p>
                 </div>
-                <div className="move-actions">
-                  {isAI && view.pending_days.length > 0 && (
-                    <button className="btn primary" onClick={decide} disabled={running}>Ask the agent to decide {view.pending_days.length} day{view.pending_days.length > 1 ? 's' : ''}</button>
-                  )}
-                  {view.account.synthetic ? (
-                    <button className="btn primary" disabled={busy || running} onClick={() => act(() => api.saPaperNextDay(view.account.id))}>Next trading day</button>
-                  ) : view.can_refresh ? (
-                    <button className="btn primary" disabled={busy || running} onClick={() => act(() => api.saPaperRefresh(view.account.id))}>Fetch the latest prices</button>
-                  ) : null}
-                </div>
-              </section>
-              {live && running && <JobProgress job={live} label="The agent is deciding" note="About 30 seconds to 10 minutes per day, depending on the agent." />}
-
-              <section aria-label="Account summary">
-                <p className="position">{position(view)}</p>
-                <dl className="facts compact">
-                  <div className="fact"><dt>Account value</dt><dd className="fact-value">{fmtMoney(m.end_equity)}</dd><dd className="fact-note">Started at {fmtMoney(m.start_equity)}</dd></div>
-                  <div className="fact"><dt>Return so far</dt><dd className={`fact-value ${m.total_return_pct > 0 ? 'pos' : m.total_return_pct < 0 ? 'neg' : ''}`}>{fmtPct(m.total_return_pct)}</dd><dd className="fact-note">Holding the stock: {fmtPct(m.buy_hold_return_pct)}</dd></div>
-                  <div className="fact"><dt>Completed trades</dt><dd className="fact-value">{m.trades}</dd><dd className="fact-note">{m.win_rate_pct === null ? 'None closed yet' : `${m.win_rate_pct.toFixed(0)}% made money`}</dd></div>
-                  <div className="fact"><dt>Trading days followed</dt><dd className="fact-value">{m.bars}</dd><dd className="fact-note">Since {m.first_date}</dd></div>
+                <dl className="acct-stats">
+                  <div><dt>Account value</dt><dd className="num">{fmtMoney(m.end_equity)}</dd></div>
+                  <div><dt>Return</dt><dd className={`num ${tone(m.total_return_pct)}`}>{fmtPct(m.total_return_pct)}</dd></div>
+                  <div><dt>vs holding</dt><dd className={`num ${tone(vs)}`}>{vs >= 0 ? '+' : ''}{vs.toFixed(1)} pts</dd></div>
+                  <div><dt>Trades</dt><dd className="num">{m.trades}</dd></div>
+                  <div><dt>Days followed</dt><dd className="num">{m.bars}</dd></div>
                 </dl>
-              </section>
+              </div>
 
               <ResultDetail result={view.result} />
 
               {view.decisions.length > 0 && (
-                <section className="sub-section">
-                  <h3>Logbook</h3>
+                <section className="panel sub-section">
+                  <h3 className="panel-title">Logbook</h3>
                   <DecisionLog decisions={[...view.decisions].reverse()} />
                 </section>
               )}
+            </>
+          )}
+        </section>
+
+        <aside className="panel ticket" aria-label="Today">
+          <h2 className="panel-title">Today</h2>
+          {!view ? <p className="field-note">Choose an account.</p> : (
+            <>
+              <section className={`today ${(view.today.action ?? 'none').toLowerCase()}`} aria-label="Latest decision">
+                <p className="today-label">Bot's call after the close on {view.today.date}</p>
+                <p className="today-call">{view.today.action ? CALL[view.today.action] : 'Not decided'}</p>
+                <p className="today-line">{todayLine(view)}</p>
+                {view.today.reason && <p className="today-reason">{view.today.reason}</p>}
+              </section>
+              <p className="position">{position(view)}</p>
+
+              <div className="move">
+                <h3>Move forward</h3>
+                <p className="field-note">{view.data_note}</p>
+                {isAI && view.pending_days.length > 0 && (
+                  <button className="btn primary block" onClick={decide} disabled={running}>Ask the agent to decide {view.pending_days.length} day{view.pending_days.length > 1 ? 's' : ''}</button>
+                )}
+                {view.account.synthetic ? (
+                  <button className="btn cta block" disabled={busy || running} onClick={() => act(() => api.saPaperNextDay(view.account.id))}>Next trading day</button>
+                ) : view.can_refresh ? (
+                  <button className="btn cta block" disabled={busy || running} onClick={() => act(() => api.saPaperRefresh(view.account.id))}>Fetch the latest prices</button>
+                ) : null}
+              </div>
+              {live && running && <JobProgress job={live} label="The agent is deciding" note="About 30 seconds to 10 minutes per day, depending on the agent." />}
 
               <footer className="account-foot">
                 <DownloadCode agentId={view.agent.id} symbol={view.account.symbol?.replace(/\.NS$/, '') ?? 'INFY'} />
@@ -166,7 +176,7 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
               </footer>
             </>
           )}
-        </div>
+        </aside>
       </div>
     </div>
   )
