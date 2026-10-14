@@ -503,6 +503,8 @@ def register(app: FastAPI, db: Store):
             code = sa.export_rules(a["strategy"], sym)
         elif a["kind"] == "ta-original":
             code = sa.export_ta(sa.nse_ticker(sym), local_ai().model)
+        elif a["kind"] in sa.NEWS_KINDS:
+            raise HTTPException(400, f"{a['title']} runs inside Purple only; there is no standalone file for it yet.")
         else:
             code = sa.export_team(sym, app.state.provider.model)
         return {"filename": f"{slug}_{re.sub(r'[^a-z0-9]+', '_', sym.lower())}.py", "code": code}

@@ -24,12 +24,19 @@ interface Bot {
 }
 
 const GROUPS = [
-  { id: 'ai', title: 'AI agents', note: 'Language-model analysts debate each trading day and decide to buy, sell or hold. Slow: minutes per day.' },
+  { id: 'ai', title: 'AI agents', note: 'Language-model agents read prices and news and decide to buy, sell or hold. Slower than rules; they use your AI.' },
   { id: 'rules', title: 'Rule bots', note: 'Fixed indicator rules from the TradingAgents indicator guide. Instant.' },
   { id: 'mine', title: 'Your strategies', note: 'Saved versions from Build your own. Instant.' },
 ] as const
 
 const TA_COSTS = { fee_bps: 3, slippage_bps: 5 }
+const NEWS_KINDS = ['ai-news', 'ai-crew']
+/** AI calls per decision and rough seconds per decision, for the time and API-limit warnings. */
+const PER_DECISION: Record<string, { calls: number; secs: [number, number] }> = { 'ai-news': { calls: 1, secs: [5, 20] }, 'ai-crew': { calls: 3, secs: [15, 60] } }
+/** Bar sizes a paper account can follow, per bot kind (matches the server). */
+const INTERVALS: Record<string, string[]> = { rules: ['1d', '5m', '15m', '30m'], 'ai-news': ['1d', '15m', '30m'], 'ai-crew': ['1d', '30m'] }
+const BARS_PER_DAY: Record<string, number> = { '1d': 1, '5m': 75, '15m': 25, '30m': 13 }
+const INTERVAL_LABEL: Record<string, string> = { '1d': 'Daily (decides on the close)', '5m': 'Every 5 minutes, live', '15m': 'Every 15 minutes, live', '30m': 'Every 30 minutes, live' }
 
 export const stockName = (d: Dataset | null | undefined) =>
   d?.synthetic ? 'the sample stock' : d?.symbol ? d.symbol.replace(/\.NS$/, '') : 'the stock'
@@ -53,6 +60,7 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [capital, setCapital] = useState(100000)
+  const [interval, setInterval_] = useState('1d')
   const [paperBusy, setPaperBusy] = useState(false)
   const [bars, setBars] = useState<PriceBar[] | null>(null)
   const [range, setRange] = useState<RangeKey>('1Y')
@@ -72,6 +80,9 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
         if (a.kind === 'ta-original' && a.available) {
           out.push({ id: a.id, group: 'ai', title: a.title, blurb: 'The original open-source TradingAgents framework: market, news, sentiment and fundamentals analysts, a bull and bear debate, then trader, risk and portfolio managers.',
             speed: 'About 10 minutes per trading day', costs: TA_COSTS, capital: 100000, sizePct: 100, info: a })
+        } else if (NEWS_KINDS.includes(a.kind) && a.available) {
+          out.push({ id: a.id, group: 'ai', title: a.title, blurb: a.tagline,
+            speed: a.speed, costs: TA_COSTS, capital: 100000, sizePct: 100, info: a })
         } else if (a.kind === 'rules' && a.strategy) {
           out.push({ id: a.id, group: 'rules', title: a.title, entry: a.describe?.entry, exit: a.describe?.exit, speed: 'Instant', costs: a.strategy.costs ?? TA_COSTS, capital: a.strategy.initial_capital ?? 100000, sizePct: a.strategy.sizing?.value ?? 100, info: a })
         }
@@ -92,6 +103,9 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
 
   const bot = useMemo(() => bots?.find(b => b.id === botId) ?? null, [bots, botId])
   const isAI = bot?.group === 'ai'
+  const kind = bot?.info?.kind ?? (bot ? 'rules' : '')
+  const isNews = NEWS_KINDS.includes(kind)
+  const per = PER_DECISION[kind]
   const engines = bot?.info?.engines ?? []
   const engine = engines.find(e => e.id === engineId) ?? null
   const dataset = datasets.find(d => d.id === datasetId) ?? null
@@ -106,9 +120,17 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
   const clear = () => { setResult(null); setTeamResult(null); setJob(null); setErr(null) }
   useEffect(clear, [botId, datasetId, symbol, days, engineId, analyses.join()])
 
+  // sensible defaults when switching between the TradingAgents analysts and the news agents' sources
+  useEffect(() => {
+    if (isNews) { setAnalyses(['google', 'reddit']); setDays(d => Math.min(d, 10)) }
+    else if (kind === 'ta-original') { setAnalyses(['market', 'news']); setDays(d => Math.min(d, 5)) }
+    setInterval_('1d')
+  }, [botId, bots === null])  // eslint-disable-line react-hooks/exhaustive-deps
+
   const pick = (id: string) => setBotId(id)
 
-  const minutes = engine ? [days * engine.minutes[0], days * engine.minutes[1]] : [days * 10, days * 20]
+  const minutes = per ? [Math.max(1, Math.round(days * per.secs[0] / 60)), Math.max(1, Math.ceil(days * per.secs[1] / 60))]
+    : engine ? [days * engine.minutes[0], days * engine.minutes[1]] : [days * 10, days * 20]
   const cost = engine?.paid && engine.cost_per_day ? [engine.cost_per_day[0] * days, engine.cost_per_day[1] * days] : null
   const ready = Boolean(bot) && (isAI
     ? Boolean(symbol.trim()) && (!engines.length || (Boolean(engine?.available) && (!engine?.paid || paidOk))) && analyses.length > 0
@@ -116,7 +138,8 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
 
   const run = async () => {
     if (!bot || !ready) return
-    if (isAI && !confirm(`This runs the original TradingAgents for ${days} trading day${days > 1 ? 's' : ''} of ${symbol}. Expect about ${minutes[0]}–${minutes[1]} minutes${cost ? ` and about $${cost[0].toFixed(2)}–${cost[1].toFixed(2)} of API credit` : ''}. Start now?`)) return
+    if (per && !confirm(`${bot.title} will decide ${days} trading day${days > 1 ? 's' : ''} of ${symbol}: about ${days * per.calls} AI call${days * per.calls > 1 ? 's' : ''} and ${minutes[0] === minutes[1] ? `about ${minutes[0]}` : `${minutes[0]}–${minutes[1]}`} minute${minutes[1] > 1 ? 's' : ''}. Free AI tiers limit calls per minute; if a call is refused, wait a minute and run again (finished days are kept). Start now?`)) return
+    if (isAI && !per && !confirm(`This runs the original TradingAgents for ${days} trading day${days > 1 ? 's' : ''} of ${symbol}. Expect about ${minutes[0]}–${minutes[1]} minutes${cost ? ` and about $${cost[0].toFixed(2)}–${cost[1].toFixed(2)} of API credit` : ''}. Start now?`)) return
     clear(); setBusy(true)
     try {
       const r = await api.saRun(bot.id, isAI ? null : datasetId, isAI ? days : 5, isAI ? analyses : [], isAI ? symbol : undefined,
@@ -130,7 +153,7 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
     if (!bot) return
     setPaperBusy(true); setErr(null)
     try {
-      const v = await api.saPaperCreate(bot.id, isAI ? null : datasetId, capital, isAI ? analyses : [], isAI ? symbol : isLive(dataset) ? dataset!.symbol! : undefined)
+      const v = await api.saPaperCreate(bot.id, isAI ? null : datasetId, capital, isAI ? analyses : [], isAI ? symbol : isLive(dataset) ? dataset!.symbol! : undefined, interval)
       onPaperCreated(v.account.id)
     } catch (e) { setErr(errText(e)); setPaperBusy(false) }
   }
@@ -220,7 +243,7 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
                   {teamResult && teamResult.decisions.length > 0 && (
                     <section className="panel sub-section">
                       <h3 className="panel-title">Day-by-day decisions</h3>
-                      <DecisionLog decisions={[...teamResult.decisions].reverse()} />
+                      <DecisionLog decisions={[...teamResult.decisions].reverse()} roles={kind === 'ai-crew' ? ['Research analyst', 'Financial analyst'] : undefined} />
                     </section>
                   )}
                 </>
@@ -240,10 +263,10 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
                     <div className="field">
                       <label htmlFor="ta-symbol">NSE symbol</label>
                       <input id="ta-symbol" value={symbol} onChange={e => setSymbol(e.target.value.toUpperCase())} />
-                      <p className="field-note">Prices and news from Yahoo Finance as {symbol.includes('.') ? symbol : `${symbol || '…'}.NS`}.</p>
+                      <p className="field-note">{isNews ? 'Prices from Yahoo Finance as ' : 'Prices and news from Yahoo Finance as '}{symbol.includes('.') ? symbol : `${symbol || '…'}.NS`}{isNews ? '; news from the sources below.' : '.'}</p>
                     </div>
                     <div className="field">
-                      <span className="label" id="analysts-label">Analysts</span>
+                      <span className="label" id="analysts-label">{isNews ? 'News sources' : 'Analysts'}</span>
                       <div className="toggles" role="group" aria-labelledby="analysts-label">
                         {bot.info!.analyses.map(x => {
                           const on = analyses.includes(x.id)
@@ -259,7 +282,7 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
                     <div className="field">
                       <label htmlFor="ta-days">Trading days</label>
                       <select id="ta-days" value={days} onChange={e => setDays(+e.target.value)}>
-                        {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n} most recent day{n > 1 ? 's' : ''}</option>)}
+                        {(isNews ? [1, 2, 3, 5, 10] : [1, 2, 3, 4, 5]).map(n => <option key={n} value={n}>{n} most recent day{n > 1 ? 's' : ''}</option>)}
                       </select>
                     </div>
                     {engines.length > 0 && (
@@ -284,7 +307,7 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
                 <div><dt>Per trade</dt><dd>{bot.sizePct >= 100 ? 'Whole account' : `${bot.sizePct}% of account`}</dd></div>
                 <div><dt>Costs per side</dt><dd>{((bot.costs.fee_bps + bot.costs.slippage_bps) / 100).toFixed(2)}%</dd></div>
                 <div><dt>Time</dt><dd>{isAI ? `${minutes[0]}–${minutes[1]} min` : 'About a second'}</dd></div>
-                <div><dt>AI cost</dt><dd>{cost ? `$${cost[0].toFixed(2)}–${cost[1].toFixed(2)}` : 'Free'}</dd></div>
+                <div><dt>AI cost</dt><dd>{cost ? `${cost[0].toFixed(2)}–${cost[1].toFixed(2)}` : per ? `${days * per.calls} AI calls` : 'Free'}</dd></div>
               </dl>
               {isAI && cost && (
                 <label className="confirm">
@@ -292,6 +315,7 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
                   <span>I approve spending up to about ${cost[1].toFixed(2)} of my API credit.</span>
                 </label>
               )}
+              {isNews && <p className="field-note">Uses the AI you connected (<button className="link-btn" onClick={openAiConnect}>change</button>). Free tiers such as Gemini limit calls per minute and per day.</p>}
               <button className="btn primary block" onClick={run} disabled={!ready || busy || running}>
                 {busy ? 'Starting…' : running ? 'Running…' : shown ? 'Run again' : 'Run backtest'}
               </button>
@@ -310,8 +334,22 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
                     <label htmlFor="paper-capital">Starting money (₹)</label>
                     <input id="paper-capital" type="number" min={1000} step={1000} value={capital} onChange={e => setCapital(Math.max(1000, +e.target.value || 0))} />
                   </div>
+                  {(() => {
+                    const options = (INTERVALS[kind] ?? ['1d']).filter(iv => iv === '1d' || isAI || isLive(dataset))
+                    const calls = per ? BARS_PER_DAY[interval] * per.calls : 0
+                    return options.length > 1 && (
+                      <div className="field">
+                        <label htmlFor="paper-interval">How often it trades</label>
+                        <select id="paper-interval" value={interval} onChange={e => setInterval_(e.target.value)}>
+                          {options.map(iv => <option key={iv} value={iv}>{INTERVAL_LABEL[iv]}</option>)}
+                        </select>
+                        {interval !== '1d' && <p className="field-note">Live NSE bars from Yahoo Finance, about 15 minutes late. Purple fetches each finished bar every minute while it runs, 09:15–15:30 IST.</p>}
+                        {calls > 1 && <p className="field-note warn">About {calls} AI calls per trading day. Free AI tiers may refuse some; the account then waits and catches up.</p>}
+                      </div>
+                    )
+                  })()}
                   <button className="btn cta block" onClick={startPaper} disabled={paperBusy}>{paperBusy ? 'Creating…' : `Start paper account, ${fmtMoney(capital)}`}</button>
-                  <DownloadCode agentId={bot.id} symbol={isAI ? symbol : dataset?.symbol ?? 'INFY'} />
+                  {!isNews && <DownloadCode agentId={bot.id} symbol={isAI ? symbol : dataset?.symbol ?? 'INFY'} />}
                 </div>
               )}
             </>

@@ -17,6 +17,7 @@ interface Props {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 /** Day and month for short spans, month and year for long ones. */
 function tickLabel(iso: string, n: number) {
+  if (iso.length > 10) return iso.slice(11, 16) === '09:15' ? `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}` : iso.slice(11, 16)
   const [y, m, d] = iso.split('-')
   const mon = MONTHS[Number(m) - 1] ?? m
   return n <= 90 ? `${Number(d)} ${mon}` : `${mon} ${y}`

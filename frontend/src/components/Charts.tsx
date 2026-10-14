@@ -124,7 +124,7 @@ export function CandleChart({ bars, marks = [], height = 360 }: { bars: Bar[]; m
           </g>
         ))}
         {dateTicks.map(({ b, i }) => (
-          <text key={b.date} x={x(i)} y={height - 6} className="axis" textAnchor="middle">{b.date.slice(2, 7).replace('-', '/')}</text>
+          <text key={b.date} x={x(i)} y={height - 6} className="axis" textAnchor="middle">{b.date.length > 10 ? b.date.slice(11, 16) : b.date.slice(2, 7).replace('-', '/')}</text>
         ))}
         {bars.map((b, i) => {
           const up = b.close >= b.open

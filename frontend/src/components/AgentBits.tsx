@@ -28,7 +28,8 @@ export function useJob<R>(job: Job<R> | null, onFinish?: (j: Job<R>) => void) {
   return state
 }
 
-const WHO: Record<string, string> = { analyst: 'Market analyst', bull: 'Bull researcher', bear: 'Bear researcher', manager: 'Trader and risk manager', note: 'Check' }
+const WHO: Record<string, string> = { analyst: 'Market analyst', bull: 'Bull researcher', bear: 'Bear researcher', manager: 'Decision', note: 'Check',
+  news: 'News feed', research: 'Research analyst', financial: 'Financial analyst' }
 
 export function JobProgress({ job, label, note }: { job: Job; label: string; note?: string }) {
   const pct = job.total ? Math.round((job.done / job.total) * 100) : 100
@@ -36,13 +37,13 @@ export function JobProgress({ job, label, note }: { job: Job; label: string; not
     <div className="job" aria-live="polite">
       <div className="job-head">
         <b>{label}</b>
-        <span>Trading day {Math.min(job.done + 1, job.total)} of {job.total}</span>
+        <span>Decision {Math.min(job.done + 1, job.total)} of {job.total}</span>
       </div>
       <div className="job-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label={label}><i style={{ width: `${pct}%` }} /></div>
       {note && <p className="field-note">{note}</p>}
       <ul className="job-feed">
         {job.log.slice(-4).map((l, i) => (
-          <li key={i}><b>{WHO[l.kind] ?? l.kind}</b>{l.date && <span className="sub"> {l.date}</span>}: {l.kind === 'analyst' ? l.text.split('\n')[0] : l.text}</li>
+          <li key={i}><b>{WHO[l.kind] ?? l.kind}</b>{l.date && <span className="sub"> {l.date}</span>}: {l.kind === 'analyst' || l.kind === 'news' ? l.text.split('\n')[0] : l.text}</li>
         ))}
       </ul>
     </div>
@@ -51,7 +52,8 @@ export function JobProgress({ job, label, note }: { job: Job; label: string; not
 
 type Decision = Pick<TeamDecision, 'date' | 'action' | 'confidence' | 'rating' | 'reason' | 'bull' | 'bear' | 'report'>
 
-export function DecisionLog({ decisions }: { decisions: Decision[] }) {
+/** roles: headings for the two arguments (bull/bear for the debate team; research/financial for the crew). */
+export function DecisionLog({ decisions, roles = ['Bull case', 'Bear case'] }: { decisions: Decision[]; roles?: [string, string] }) {
   return (
     <ol className="decisions">
       {decisions.map(d => (
@@ -64,11 +66,13 @@ export function DecisionLog({ decisions }: { decisions: Decision[] }) {
           <p>{d.reason || 'No reason given.'}</p>
           {(d.bull || d.bear || d.report) && (
             <details>
-              <summary>Read the bull and bear arguments and the market report</summary>
-              <div className="debate">
-                <div><b>Bull case</b><p>{d.bull}</p></div>
-                <div><b>Bear case</b><p>{d.bear}</p></div>
-              </div>
+              <summary>{d.bull || d.bear ? 'Read the arguments and what the agent read' : 'Read what the agent read'}</summary>
+              {(d.bull || d.bear) && (
+                <div className="debate">
+                  <div><b>{roles[0]}</b><p>{d.bull}</p></div>
+                  <div><b>{roles[1]}</b><p>{d.bear}</p></div>
+                </div>
+              )}
               <pre className="report">{d.report}</pre>
             </details>
           )}

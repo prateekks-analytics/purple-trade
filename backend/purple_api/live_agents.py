@@ -118,7 +118,8 @@ def fundamentals_text(rows: list[dict], at: datetime) -> str:
     for year in sorted(by_year)[-4:]:
         cells = by_year[year]
         cur = next(iter(cells.values())).get("currency") or ""
-        parts = [f"{k} {v['value']:,.2f}" if k == "DilutedEPS" else f"{k} {v['value'] / 1e7:,.0f} crore"
+        big = (lambda x: f"{x / 1e7:,.0f} crore") if cur == "INR" else (lambda x: f"{x / 1e9:,.2f} billion")
+        parts = [f"{k} {v['value']:,.2f}" if k == "DilutedEPS" else f"{k} {big(v['value'])}"
                  for k, v in sorted(cells.items())]
         lines.append(f"- Year ended {year} ({cur}): " + "; ".join(parts))
     return "\n".join(lines)

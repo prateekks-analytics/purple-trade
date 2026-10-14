@@ -146,7 +146,7 @@ export interface TaEngine {
 
 export interface SuperAgentInfo {
   id: string
-  kind: 'ai-team' | 'ta-original' | 'rules' | 'research'
+  kind: 'ai-team' | 'ta-original' | 'ai-news' | 'ai-crew' | 'rules' | 'research'
   title: string
   tagline: string
   source: { name: string; url: string }
@@ -191,12 +191,14 @@ export type RunResponse =
 export interface PaperAccount {
   id: string; name: string; agent_id: string; dataset_id: string; symbol: string | null
   synthetic: number; start_date: string; sim_days: number; capital: number; created_at: string
+  interval?: string
 }
 
 export interface PaperView {
   account: PaperAccount
   agent: { id: string; title: string; kind: SuperAgentInfo['kind'] }
   latest_date: string
+  interval?: string
   data_note: string
   pending_days: string[]
   can_refresh?: boolean
@@ -208,6 +210,13 @@ export interface PaperView {
 export interface Quote {
   ticker: string; currency: string | null; price: number; prev_close: number | null; change_pct: number | null
   time: string | null; session_open: boolean; source: string
+}
+
+export interface MarketStatus {
+  feed: string; calls_last_hour: number; rate_limited: boolean; retry_in_s: number
+  last_error: string | null; last_error_at: string | null; session: 'open' | 'closed' | 'after'
+  feeds: { id: string; label: string; connected: boolean; delay: string; cost: string; note: string }[]
+  loop: { last_tick: string | null; last_error: string | null; bars_saved: number; ai_decisions: number; intraday_accounts: number; background_ai: boolean }
 }
 
 export interface Health { hosted?: boolean; ok: boolean; ai: { provider: string; model: string; available: boolean; detail: string } }

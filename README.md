@@ -24,7 +24,11 @@ your own ideas or files into rules, and to run AI agents.
 - **Build your own**: describe an idea in plain words (or upload a file) and get exact rules you can edit.
 - **Paper accounts**: follow a bot day by day with virtual money. On a real NSE stock (Add a stock → Get live
   prices) the account shows the live price (Yahoo Finance, about 15 minutes delayed) and moves forward by itself
-  after each trading session closes.
+  after each trading session closes. Rule bots can also trade **every 5, 15 or 30 minutes** during market hours
+  (live 5-minute bars, about 15 minutes late); Purple keeps fetching bars while it runs, even with the page closed.
+- **News agents**: *News & Social Pulse* reads Google News and Reddit trader posts about the stock and trades on the
+  mood; *Stock Analysis Crew (NSE)* (research analyst → financial analyst → investment advisor) is an India version of
+  the crewAI stock-analysis example. Both use the AI you connect; free tiers limit how many calls you can make.
 
 Your strategies and paper accounts are saved on your computer in `%LOCALAPPDATA%\PurpleTrade`.
 The original TradingAgents agent needs a separate developer install and is not part of the download.

@@ -1,5 +1,5 @@
 import type {
-  AgentImport, AiProvider, Quote, BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, Review, RunResponse, Strategy,
+  AgentImport, AiProvider, MarketStatus, Quote, BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, Review, RunResponse, Strategy,
   StrategyDoc, StrategySummary, SuperAgentInfo, Template,
 } from './types'
 import { aiHeaders } from './lib/aiSettings'
@@ -63,6 +63,7 @@ export const api = {
     return req<Dataset>('/api/datasets', { method: 'POST', body: fd })
   },
   marketPrices: (symbol: string) => req<Dataset>('/api/market/prices', json('POST', { symbol })),
+  marketStatus: () => req<MarketStatus>('/api/market/status'),
   marketQuote: (symbol: string) => req<Quote>(`/api/market/quote?symbol=${encodeURIComponent(symbol)}`),
   importAgent: (file: File) => {
     const fd = new FormData()
@@ -81,8 +82,8 @@ export const api = {
     req<RunResponse>('/api/superagent/run', json('POST', { agent_id, dataset_id, days, analyses, symbol, engine, confirm_paid })),
   saJob: <R,>(id: string) => req<Job<R>>(`/api/superagent/jobs/${id}`),
   saPaperList: () => req<PaperAccount[]>('/api/superagent/paper'),
-  saPaperCreate: (agent_id: string, dataset_id: string | null, capital: number, analyses: string[], symbol?: string) =>
-    req<PaperView>('/api/superagent/paper', json('POST', { agent_id, dataset_id, capital, analyses, symbol })),
+  saPaperCreate: (agent_id: string, dataset_id: string | null, capital: number, analyses: string[], symbol?: string, interval = '1d') =>
+    req<PaperView>('/api/superagent/paper', json('POST', { agent_id, dataset_id, capital, analyses, symbol, interval })),
   saPaperRefresh: (id: string) => req<PaperView>(`/api/superagent/paper/${id}/refresh`, json('POST')),
   saPaper: (id: string) => req<PaperView>(`/api/superagent/paper/${id}`),
   saPaperNextDay: (id: string) => req<PaperView>(`/api/superagent/paper/${id}/next-day`, json('POST')),

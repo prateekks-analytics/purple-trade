@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
-import type { Job, PaperAccount, PaperView, Quote } from '../types'
+import type { Job, MarketStatus, PaperAccount, PaperView, Quote } from '../types'
 import { fmtMoney, fmtPct } from '../lib/tree'
 import { isLive } from '../lib/portfolio'
 import { DecisionLog, DownloadCode, errText, JobProgress, useJob } from './AgentBits'
@@ -8,6 +8,11 @@ import { ResultDetail } from './Results'
 
 const HIDDEN = new Set(['tradingagents'])
 const CALL = { BUY: 'Buy', SELL: 'Sell', HOLD: 'Hold' } as const
+const NEWS_KINDS = ['ai-news', 'ai-crew']
+const CALLS: Record<string, number> = { 'ai-news': 1, 'ai-crew': 3 }
+const autoKey = (id: string) => `purple.autoDecide.${id}`
+const readAuto = (id: string) => { try { return localStorage.getItem(autoKey(id)) === '1' } catch { return false } }
+const writeAuto = (id: string, on: boolean) => { try { localStorage.setItem(autoKey(id), on ? '1' : '0') } catch { /* private mode */ } }
 
 /** Plain-English sentence about what the account holds right now. */
 function position(v: PaperView) {
@@ -51,6 +56,9 @@ function useLive(view: PaperView | null, onView: (v: PaperView) => void) {
     }
     const tick = () => {
       if (document.hidden) return
+      if (view!.interval && view!.interval !== '1d') {
+        api.saPaper(id).then(v => { if (alive && v.latest_date !== latest.current) { onView(v); window.dispatchEvent(new Event('purple:data')) } }).catch(() => {})
+      }
       api.marketQuote(view!.account.symbol!).then(q => {
         if (!alive) return
         setQuote(q); setQErr(null)
@@ -58,7 +66,9 @@ function useLive(view: PaperView | null, onView: (v: PaperView) => void) {
         if (!q.session_open && day && latest.current && day > latest.current && Date.now() - lastRefresh.current > REFRESH_MS) refresh()
       }).catch(e => alive && setQErr(errText(e)))
     }
-    refresh(); tick()
+    if (view!.interval && view!.interval !== '1d') lastRefresh.current = Date.now()
+    else refresh()
+    tick()
     const t = setInterval(tick, QUOTE_MS)
     return () => { alive = false; clearInterval(t) }
   }, [id, live]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -66,11 +76,26 @@ function useLive(view: PaperView | null, onView: (v: PaperView) => void) {
   return { quote, qErr, live }
 }
 
+/** Feed health (Yahoo rate limits, live loop errors), polled every minute while a live account is open. */
+function useMarketStatus(on: boolean) {
+  const [st, setSt] = useState<MarketStatus | null>(null)
+  useEffect(() => {
+    if (!on) { setSt(null); return }
+    let alive = true
+    const tick = () => { if (!document.hidden) api.marketStatus().then(x => alive && setSt(x)).catch(() => {}) }
+    tick()
+    const t = setInterval(tick, QUOTE_MS)
+    return () => { alive = false; clearInterval(t) }
+  }, [on])
+  return st
+}
+
 function todayLine(v: PaperView) {
   const a = v.today.action
-  if (!a) return 'The agent has not decided the latest day yet.'
+  const next = v.interval && v.interval !== '1d' ? "the next bar's" : "the next trading day's"
+  if (!a) return 'The agent has not decided the latest bar yet.'
   if (a === 'HOLD') return 'No trade: keep the account as it is.'
-  return a === 'BUY' ? "It would buy at the next trading day's opening price." : "It would sell at the next trading day's opening price."
+  return a === 'BUY' ? `It would buy at ${next} opening price.` : `It would sell at ${next} opening price.`
 }
 
 export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onSelect: (id: string) => void; onTest: () => void }) {
@@ -93,6 +118,9 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
   useEffect(() => { if (!accountId && accounts?.length) onSelect(accounts[0].id) }, [accountId, accounts]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const market = useLive(view, setView)
+  const status = useMarketStatus(market.live)
+  const [auto, setAuto] = useState(false)
+  useEffect(() => { setAuto(view ? readAuto(view.account.id) : false) }, [view?.account.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const live = useJob(job, j => { if (j.status === 'done' && view) api.saPaper(view.account.id).then(setView); if (j.status === 'error') setErr(j.error) })
   const running = live?.status === 'running'
 
@@ -100,6 +128,12 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
     setBusy(true); setErr(null)
     try { setView(await fn()); window.dispatchEvent(new Event('purple:data')) } catch (e) { setErr(errText(e)) } finally { setBusy(false) }
   }
+  const isNewsAgent = Boolean(view && NEWS_KINDS.includes(view.agent.kind))
+  useEffect(() => {
+    if (!auto || !view || !isNewsAgent || running || job?.status === 'running' || !view.pending_days.length) return
+    api.saPaperDecide(view.account.id).then(r => setJob(r.job)).catch(e => setErr(errText(e)))
+  }, [auto, view?.pending_days.length, running]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const decide = async () => {
     if (!view) return
     const slow = view.agent.kind === 'ta-original'
@@ -176,7 +210,7 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
                   <div><dt>Return</dt><dd className={`num ${tone(m.total_return_pct)}`}>{fmtPct(m.total_return_pct)}</dd></div>
                   <div><dt>vs holding</dt><dd className={`num ${tone(vs)}`}>{vs >= 0 ? '+' : ''}{vs.toFixed(1)} pts</dd></div>
                   <div><dt>Trades</dt><dd className="num">{m.trades}</dd></div>
-                  <div><dt>Days followed</dt><dd className="num">{m.bars}</dd></div>
+                  <div><dt>{view.interval && view.interval !== '1d' ? 'Bars followed' : 'Days followed'}</dt><dd className="num">{m.bars}</dd></div>
                 </dl>
               </div>
 
@@ -185,7 +219,7 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
               {view.decisions.length > 0 && (
                 <section className="panel sub-section">
                   <h3 className="panel-title">Logbook</h3>
-                  <DecisionLog decisions={[...view.decisions].reverse()} />
+                  <DecisionLog decisions={[...view.decisions].reverse()} roles={view.agent.kind === 'ai-crew' ? ['Research analyst', 'Financial analyst'] : undefined} />
                 </section>
               )}
             </>
@@ -197,7 +231,7 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
           {!view ? <p className="field-note">Choose an account.</p> : (
             <>
               <section className={`today ${(view.today.action ?? 'none').toLowerCase()}`} aria-label="Latest decision">
-                <p className="today-label">Bot's call after the close on {view.today.date}</p>
+                <p className="today-label">{view.today.date.length > 10 ? `Bot's call after the ${view.today.date.slice(11)} bar (${view.today.date.slice(0, 10)})` : `Bot's call after the close on ${view.today.date}`}</p>
                 <p className="today-call">{view.today.action ? CALL[view.today.action] : 'Not decided'}</p>
                 <p className="today-line">{todayLine(view)}</p>
                 {view.today.reason && <p className="today-reason">{view.today.reason}</p>}
@@ -222,9 +256,24 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
                 </section>
               )}
 
+              {status && (status.rate_limited || status.loop.last_error) && (
+                <p className="field-note warn" role="status">
+                  {status.rate_limited ? `Yahoo Finance is limiting requests (${status.calls_last_hour} calls in the last hour). Live prices resume in about ${status.retry_in_s} s.`
+                    : `Last live update problem: ${status.loop.last_error}`}
+                </p>
+              )}
+
               <div className="move">
                 <h3>Move forward</h3>
                 <p className="field-note">{view.data_note}</p>
+                {isNewsAgent && (
+                  <label className="confirm">
+                    <input type="checkbox" checked={auto} onChange={e => { setAuto(e.target.checked); writeAuto(view.account.id, e.target.checked) }} />
+                    <span>Decide new bars automatically while this page is open, with the AI you connected
+                      (about {CALLS[view.agent.kind] * ({ '1d': 1, '15m': 25, '30m': 13 }[view.interval ?? '1d'] ?? 1)} AI calls per trading day; free tiers may refuse some).
+                      {status?.loop.background_ai ? ' The server\'s own free AI also decides them when this page is closed.' : ''}</span>
+                  </label>
+                )}
                 {isAI && view.pending_days.length > 0 && (
                   <button className="btn primary block" onClick={decide} disabled={running}>Ask the agent to decide {view.pending_days.length} day{view.pending_days.length > 1 ? 's' : ''}</button>
                 )}

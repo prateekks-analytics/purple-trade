@@ -57,9 +57,30 @@ the repo) because the in-app browser pane does not render while the window is mi
   TradingAgents install needed. `ta_prices` removed; TA tests now mock `market.daily_bars`. Tests: **67 passing**.
 - UI: price picker "Add a stock" → "Get live prices"; Test a bot passes the symbol for Yahoo datasets; Paper page shows
   a live quote panel (polls every 60 s, pauses when the tab is hidden), "Value now", and auto-refreshes the account
-  once a newer session has closed. Daily rules still decide on the close and fill at the next open (no intraday).
-- Local test account left in the DB: "Golden Cross Trend · INFY.NS" (live). Hosted demo reaching Yahoo from Render:
-  UNVERIFIED until pushed.
+  once a newer session has closed. Daily rules still decide on the close and fill at the next open.
+- Local test accounts left in the DB: "Golden Cross Trend · INFY.NS" (daily) and "Golden Cross Trend · INFY.NS · 5m".
+  Hosted demo reaching Yahoo from Render: UNVERIFIED until pushed.
+
+**Intraday paper trading + news agents (15 Oct, commits edb2f3b and the frontend commit after it; not pushed)**
+- Paper accounts have an `interval` ('1d', '5m', '15m', '30m'; column added by migration). Intraday bars live in the
+  `market_bars` table (upserted, completed bars only, 'YYYY-MM-DD HH:MM' IST). Rule bots: 1d/5m/15m/30m; News Pulse:
+  1d/15m/30m; Crew: 1d/30m; TradingAgents and the hidden team: daily only.
+- Live loop (`main.py` lifespan thread, every 60 s; `PURPLE_LIVE_LOOP=0` disables; tests call `app.state.live_tick`):
+  fetches intraday bars 09:15–15:45 IST Mon–Fri, the daily close after 16:00 IST, and lets the SERVER's own free AI
+  (gemini/ollama only, never a browser key) decide pending bars of news agents. Exchange holidays not checked.
+- Yahoo rate limits: a 429 pauses all Yahoo calls 60 s; `GET /api/market/status` reports it plus loop errors; the
+  Paper page shows a warning. `market.FEEDS` lists Yahoo and a not-connected broker slot (Upstox/Angel One/Kite,
+  user's own key, pricing UNVERIFIED) for later.
+- `news.py`: Google News RSS (date-filtered for past days), Reddit RSS search (r/IndianStreetBets + r/IndianStockMarket;
+  JSON API returns 403; RSS sometimes 429), Yahoo headline RSS (nearly empty for NSE). StockTwits API returned 403.
+  Items are filtered by publish time ≤ decision bar (no look-ahead) and treated as data in prompts.
+- `live_agents.py`: News & Social Pulse (`news-pulse`, kind ai-news, 1 AI call/decision) and Stock Analysis Crew (NSE)
+  (`crew-nse`, kind ai-crew; Purple's re-implementation of Prof. Harnal's crewAI stock_analysis link: research →
+  financial (Yahoo annual figures, 60-day filing lag) → advisor; 3 calls). They use the browser's connected AI, else
+  the server default. Verified live 15 Oct on Gemini: Pulse read 25 RELIANCE items → BUY with cited items; Crew on
+  INFY → HOLD (Reddit 429 noted, run continued). No code export for these two (400).
+- Paper page: "Bars followed", intraday labels, opt-in "decide new bars automatically" (localStorage per account).
+- Tests: **76 passing** (`tests/test_live.py` added; two catalog tests updated because the crew is now runnable).
 
 **Not done / open**
 - Full TradingAgents run through the new UI (~10–20 min; ask first). TradingAgents is not in the exe or the web demo.
