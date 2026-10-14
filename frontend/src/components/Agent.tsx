@@ -5,6 +5,8 @@ import { fmtMoney } from '../lib/tree'
 import { getAi, openAiConnect } from '../lib/aiSettings'
 import { DecisionLog, errText, JobProgress, useJob } from './AgentBits'
 import { ResultDetail, VerdictPanel } from './Results'
+import { AskSentence, DESK, DeskRow, POPULAR } from './Desk'
+import { IconSpark } from './Icons'
 
 /** The agent's pipeline, in order. `kinds` are the job-log kinds that mark a step as finished. */
 const STEPS = [
@@ -22,7 +24,7 @@ const STEPS = [
     what: 'Weighs everything, decides Buy, Hold or Sell, and says what would prove it wrong. Stop-loss and target come from volatility.' },
 ] as const
 const OPTIONAL = ['news', 'social', 'fundamentals'] as const
-const PICKS = ['RELIANCE', 'INFY', 'TCS', 'HDFCBANK', 'ICICIBANK', 'SBIN']
+const PICKS = POPULAR
 
 const plain = (s: string) => s.replace(/\.NS$/, '')
 
@@ -38,10 +40,10 @@ function headline(d: AgentCall['decision'], holding: boolean): { word: string; t
   return { word: 'Wait', tone: 'hold', line: 'Don\'t buy yet: the evidence is not strong enough.' }
 }
 
-export function Agent({ health, onPaperCreated }: { health: Health | null; onPaperCreated: (id: string) => void }) {
+export function Agent({ health, initialSymbol, onPaperCreated }: { health: Health | null; initialSymbol?: string; onPaperCreated: (id: string) => void }) {
   const [agents, setAgents] = useState<SuperAgentInfo[] | null>(null)
   const [agentId, setAgentId] = useState('purple-agent')
-  const [symbol, setSymbol] = useState('RELIANCE')
+  const [symbol, setSymbol] = useState(initialSymbol?.toUpperCase() || 'RELIANCE')
   const [holding, setHolding] = useState(false)
   const [use, setUse] = useState<string[]>(['market', 'news', 'social', 'fundamentals'])
   const [job, setJob] = useState<Job<AgentCall> | null>(null)
@@ -137,189 +139,182 @@ export function Agent({ health, onPaperCreated }: { health: Health | null; onPap
   }
 
   const decisions = useMemo(() => (bt ? [...bt.decisions].reverse() as TeamDecision[] : []), [bt])
+  const shown = STEPS.filter((s, i) => stepState(s, i) !== 'off')
+  const ladderAt = (p: { stop: number; target: number }, close: number) => `${Math.min(90, Math.max(10, ((close - p.stop) / (p.target - p.stop)) * 100)).toFixed(1)}%`
+  const rupee = (v: number) => `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 
   return (
-    <div className="page wide">
-      <header className="page-head">
-        <p className="kicker">AI agent</p>
-        <h1>Should you buy this stock?</h1>
-        <p className="lede">Name an NSE stock. The agent researches it the way an analyst team would, then gives one call:
-          Buy, Hold or Sell, with its reasons, a stop-loss and what would prove it wrong.</p>
-      </header>
+    <div className="page wide agent-page">
+      <section className="hero hero-agent" aria-labelledby="agent-h">
+        <h1 id="agent-h" className="visually-hidden">Ask the AI agent</h1>
+        <AskSentence value={symbol} onChange={setSymbol} onSubmit={() => { if (!running) ask() }} holding={holding} size="lg" id="agent-symbol" />
+        <div className="chips hero-chips" role="group" aria-label="Popular stocks">
+          {PICKS.map(p => <button key={p} type="button" className={`chip ${sym === p ? 'on' : ''}`} onClick={() => setSymbol(p)}>{p}</button>)}
+        </div>
 
-      <div className="agent-grid">
-        {/* ---------- the question ---------- */}
-        <aside className="panel ticket agent-ask" aria-label="Ask the agent">
-          <h2 className="panel-title">Ask the agent</h2>
-          <div className="field">
-            <label htmlFor="agent-symbol">Stock (NSE symbol)</label>
-            <input id="agent-symbol" value={symbol} onChange={e => setSymbol(e.target.value.toUpperCase())}
-              onKeyDown={e => { if (e.key === 'Enter' && !running) ask() }} placeholder="e.g. RELIANCE" autoComplete="off" />
-            <div className="chips" role="group" aria-label="Popular stocks">
-              {PICKS.map(p => <button key={p} type="button" className={`chip ${sym === p ? 'on' : ''}`} onClick={() => setSymbol(p)}>{p}</button>)}
-            </div>
+        <div className="ask-options">
+          <div className="segmented dark" role="radiogroup" aria-label="Do you own it?">
+            <button type="button" role="radio" aria-checked={!holding} className={!holding ? 'on' : ''} onClick={() => setHolding(false)}>I don't own it</button>
+            <button type="button" role="radio" aria-checked={holding} className={holding ? 'on' : ''} onClick={() => setHolding(true)}>I own it</button>
           </div>
-
-          <div className="field">
-            <span className="label" id="own-label">Do you own it?</span>
-            <div className="segmented" role="radiogroup" aria-labelledby="own-label">
-              <button type="button" role="radio" aria-checked={!holding} className={!holding ? 'on' : ''} onClick={() => setHolding(false)}>Not yet</button>
-              <button type="button" role="radio" aria-checked={holding} className={holding ? 'on' : ''} onClick={() => setHolding(true)}>I own it</button>
-            </div>
+          <div className="check-chips" role="group" aria-label="What it checks">
+            {STEPS.filter(s => s.id === 'market' || (OPTIONAL as readonly string[]).includes(s.id)).map(s => {
+              const on = use.includes(s.id)
+              const face = DESK.find(x => x.id === s.id)!
+              return (
+                <button key={s.id} type="button" className={`check-chip ${on ? 'on' : ''}`} aria-pressed={on} disabled={s.id === 'market'}
+                  title={s.what} onClick={() => setUse(u => (on ? u.filter(x => x !== s.id) : [...u, s.id]))}>{face.icon}{s.title}</button>
+              )
+            })}
           </div>
-
-          <div className="field">
-            <span className="label" id="use-label">What it checks</span>
-            <div className="toggles" role="group" aria-labelledby="use-label">
-              {STEPS.filter(s => s.id === 'market' || (OPTIONAL as readonly string[]).includes(s.id)).map(s => {
-                const on = use.includes(s.id)
-                return (
-                  <button key={s.id} type="button" className={`toggle ${on ? 'on' : ''}`} aria-pressed={on} disabled={s.id === 'market'}
-                    title={s.what} onClick={() => setUse(u => (on ? u.filter(x => x !== s.id) : [...u, s.id]))}>{s.title}</button>
-                )
-              })}
-            </div>
-            <p className="field-note">Price & indicators is always on. Fewer checks = fewer AI calls ({isOriginal ? 'many' : calls} per call).</p>
-          </div>
-
           {original && (
-            <div className="field">
-              <span className="label" id="engine-label">Agent</span>
-              <div className="engine-pick" role="radiogroup" aria-labelledby="engine-label">
-                <label className={agentId === 'purple-agent' ? 'on' : ''}>
-                  <input type="radio" name="engine" checked={agentId === 'purple-agent'} onChange={() => setAgentId('purple-agent')} />
-                  <span><b>Purple Research Agent</b><small>About 1 minute · up to 5 AI calls</small></span>
-                </label>
-                <label className={isOriginal ? 'on' : ''}>
-                  <input type="radio" name="engine" checked={isOriginal} onChange={() => setAgentId('tradingagents-original')} />
-                  <span><b>Original TradingAgents</b><small>Research version · 10–20 minutes</small></span>
-                </label>
-              </div>
-            </div>
+            <label className="engine-select">
+              <span className="visually-hidden">Agent</span>
+              <select value={agentId} onChange={e => setAgentId(e.target.value)}>
+                <option value="purple-agent">Purple Research Agent, about 1 min</option>
+                <option value="tradingagents-original">Original TradingAgents, 10–20 min</option>
+              </select>
+            </label>
           )}
+        </div>
 
-          <p className="field-note">AI: {aiOk ? aiName : 'not connected'} · <button className="link-btn" onClick={openAiConnect}>{aiOk ? 'change' : 'Connect an AI'}</button></p>
-          <button className="btn primary block" onClick={() => ask()} disabled={!sym || busy || running || (!aiOk && !isOriginal)}>
-            {busy ? 'Starting…' : running ? 'The agent is working…' : `Get the call on ${sym || '…'}`}
+        <div className="hero-actions">
+          <button className="btn glow lg" onClick={() => ask()} disabled={!sym || busy || running || (!aiOk && !isOriginal)}>
+            <IconSpark /> {busy ? 'Starting…' : running ? 'The agent is working…' : `Get the call on ${sym || '…'}`}
           </button>
-          {!aiOk && !isOriginal && <p className="field-note warn">Connect an AI first (free Google Gemini works).</p>}
-          {err && <p className="error-text" role="alert">{err}</p>}
-          <p className="fineprint">Research tool, not investment advice. Prices from Yahoo Finance, about 15 minutes delayed.</p>
-        </aside>
+          <span className="hero-note">
+            {aiOk ? <>{isOriginal ? 'Many' : `${calls}`} AI calls on {aiName}. <button className="link-btn on-dark" onClick={openAiConnect}>Change</button></>
+              : <>Connect an AI first (Google Gemini is free). <button className="link-btn on-dark" onClick={openAiConnect}>Connect</button></>}
+          </span>
+        </div>
+        {err && <p className="hero-error" role="alert">{err}</p>}
+      </section>
 
-        {/* ---------- the answer ---------- */}
-        <section className="trade-main" aria-label="The agent's work">
-          {call && d && head && (
-            <section className={`panel verdict-call ${head.tone}`} aria-live="polite">
-              <div className="call-top">
-                <div>
-                  <p className="today-label">{call.agent.title} · {plain(call.symbol)}{call.name && call.name !== plain(call.symbol) ? ` (${call.name})` : ''}</p>
-                  <p className="call-word">{head.word}</p>
-                  <p className="call-line">{head.line}</p>
-                </div>
-                <dl className="call-facts">
-                  <div><dt>Based on the close of</dt><dd>{call.date}</dd></div>
-                  <div><dt>Close</dt><dd className="num">₹{call.close.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</dd></div>
-                  {call.quote && <div><dt>Live price</dt><dd className="num">₹{call.quote.price.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</dd></div>}
-                  {d.confidence > 0 && <div><dt>Confidence</dt><dd className="num">{Math.round(d.confidence * 100)}%</dd></div>}
-                  {d.rating && <div><dt>Rating</dt><dd>{d.rating}</dd></div>}
-                </dl>
-              </div>
-              {d.reason && <p className="call-reason">{d.reason}</p>}
-              {d.risks && <p className="call-risk"><b>What would prove it wrong:</b> {d.risks}</p>}
-              {d.risk_plan && (head.tone === 'buy' || call.holding) && (
-                <p className="call-plan">
-                  <span><b>Stop-loss</b> ₹{d.risk_plan.stop.toLocaleString('en-IN')} <span className="neg">({d.risk_plan.stop_pct}%)</span></span>
-                  <span><b>Target</b> ₹{d.risk_plan.target.toLocaleString('en-IN')} <span className="pos">(+{d.risk_plan.target_pct}%)</span></span>
-                  <span className="sub">2× and 3× the average daily range (ATR ₹{d.risk_plan.atr}), computed by code.</span>
-                </p>
-              )}
-              {d.notes.length > 0 && <p className="field-note">{d.notes.join(' ')}</p>}
-              <p className="field-note">{call.cached ? 'Saved call from earlier for this session. ' : ''}AI: {call.model}. <button className="link-btn" onClick={() => ask(true)} disabled={running}>Ask again</button></p>
-            </section>
-          )}
-
-          {isOriginal && live && running && <JobProgress job={live} label="TradingAgents is working" note="Takes several minutes. You can keep this page open." />}
-
-          <section className="panel pipeline" aria-label="How the agent decides">
-            <div className="panel-head">
-              <div>
-                <h2 className="panel-title">{call ? 'How it got there' : running ? `Working on ${sym}…` : 'How the agent decides'}</h2>
-                {!call && !running && <p className="field-note">Six steps, in this order, every time. Click a finished step to read it.</p>}
-              </div>
+      {call && d && head && (
+        <section className={`call-card ${head.tone}`} aria-live="polite" aria-label="The agent's call">
+          <div className="call-main">
+            <p className="call-who">{call.agent.title} on <b>{plain(call.symbol)}</b>{call.name && call.name !== plain(call.symbol) ? `, ${call.name}` : ''}</p>
+            <p className="call-word">{head.word}</p>
+            <p className="call-line">{head.line}</p>
+            <ul className="call-chips">
+              <li>Close of {call.date} <b className="num">{rupee(call.close)}</b></li>
+              {call.quote && <li>Live <b className="num">{rupee(call.quote.price)}</b></li>}
+              {d.rating && <li>Rated <b>{d.rating}</b></li>}
+            </ul>
+          </div>
+          {d.confidence > 0 && (
+            <div className="ring" role="img" aria-label={`Confidence ${Math.round(d.confidence * 100)} percent`}>
+              <svg viewBox="0 0 120 120" width="120" height="120" aria-hidden="true">
+                <circle cx="60" cy="60" r="50" className="ring-track" />
+                <circle cx="60" cy="60" r="50" className="ring-fill" pathLength={100} strokeDasharray={`${Math.round(d.confidence * 100)} 100`} />
+              </svg>
+              <span className="ring-num num">{Math.round(d.confidence * 100)}<small>%</small></span>
+              <span className="ring-label">confident</span>
             </div>
-            <ol className="steps">
-              {STEPS.map((s, i) => {
-                const st = stepState(s, i)
-                const out = stepOut(s.id)
-                return (
-                  <li key={s.id} className={`step ${st}`}>
-                    <span className="step-dot" aria-hidden="true">{st === 'done' ? '✓' : i + 1}</span>
-                    <div className="step-body">
-                      <p className="step-title"><b>{s.title}</b> <span className="sub">{s.who}{s.ai ? '' : ' · code, no AI'}{st === 'off' ? ' · switched off' : st === 'working' ? ' · working…' : ''}</span></p>
-                      {out ? (
-                        <details open={s.id === 'debate'}>
-                          <summary>{s.id === 'market' ? 'Read the market report' : s.id === 'call' ? 'Read the reasoning' : out.split('\n')[0].slice(0, 140) + (out.length > 140 ? '…' : '')}</summary>
-                          <p className="step-out">{out}</p>
-                        </details>
-                      ) : <p className="step-what">{s.what}</p>}
-                    </div>
-                  </li>
-                )
-              })}
-            </ol>
-            {d?.report && (
-              <details className="pad-x raw">
-                <summary>Everything the agent read (headlines, figures, indicators)</summary>
-                <pre className="report">{d.report}</pre>
-              </details>
-            )}
-          </section>
+          )}
 
-          {call && (
-            <section className="panel next-steps" aria-label="What next">
-              <h2 className="panel-title">What next?</h2>
-              <div className="next-grid">
-                <div className="next-card">
-                  <h3>Follow this agent with virtual money</h3>
-                  <p className="field-note">A paper account acts on the agent's call after every NSE close. No real orders.</p>
-                  <div className="field-row">
-                    <label className="visually-hidden" htmlFor="agent-capital">Starting money (₹)</label>
-                    <input id="agent-capital" type="number" min={1000} step={1000} value={capital} onChange={e => setCapital(Math.max(1000, +e.target.value || 0))} />
-                    <button className="btn cta" onClick={follow} disabled={paperBusy}>{paperBusy ? 'Creating…' : `Start with ${fmtMoney(capital)}`}</button>
-                  </div>
-                </div>
-                <div className="next-card">
-                  <h3>Check it on past days</h3>
-                  <p className="field-note">The agent decides each recent day using only what was known then, and we count the result.</p>
-                  <div className="field-row">
-                    <label className="visually-hidden" htmlFor="agent-days">Days</label>
-                    <select id="agent-days" value={days} onChange={e => setDays(+e.target.value)}>
-                      {[3, 5, 10].map(n => <option key={n} value={n}>Last {n} trading days</option>)}
-                    </select>
-                    <button className="btn" onClick={backtest} disabled={btRunning || isOriginal}>{btRunning ? 'Running…' : 'Run'}</button>
-                  </div>
-                  {isOriginal && <p className="field-note">For the original TradingAgents, follow it in a paper account instead (minutes per day).</p>}
-                </div>
+          {d.risk_plan && (head.tone === 'buy' || call.holding) && (
+            <div className="ladder" aria-label="Stop-loss and target">
+              <div className="ladder-bar">
+                <span className="ladder-loss" style={{ width: ladderAt(d.risk_plan, call.close) }} />
+                <span className="ladder-gain" />
+                <span className="ladder-now" style={{ left: ladderAt(d.risk_plan, call.close) }} title="Last close" />
               </div>
+              <div className="ladder-labels">
+                <span><b className="neg">Stop {rupee(d.risk_plan.stop)}</b><small>{d.risk_plan.stop_pct}%</small></span>
+                <span className="mid"><b>{rupee(call.close)}</b><small>close</small></span>
+                <span className="end"><b className="pos">Target {rupee(d.risk_plan.target)}</b><small>+{d.risk_plan.target_pct}%</small></span>
+              </div>
+              <p className="sub">2× and 3× the average daily range (ATR {rupee(d.risk_plan.atr)}), worked out by code.</p>
+            </div>
+          )}
+
+          {d.reason && <p className="call-reason">{d.reason}</p>}
+          {d.risks && <p className="call-risk"><b>What would prove it wrong</b>{d.risks}</p>}
+          {d.notes.length > 0 && <p className="field-note">{d.notes.join(' ')}</p>}
+          <p className="call-foot">{call.cached ? 'Saved call from earlier this session. ' : ''}AI: {call.model}. <button className="link-btn" onClick={() => ask(true)} disabled={running}>Ask again</button></p>
+        </section>
+      )}
+
+      {call && (
+        <div className="next-grid" aria-label="What next">
+          <section className="next-card primary">
+            <h2>Follow it with paper money</h2>
+            <p>The account acts on the agent's call after every NSE close.</p>
+            <div className="field-row">
+              <label className="visually-hidden" htmlFor="agent-capital">Starting money (₹)</label>
+              <input id="agent-capital" type="number" min={1000} step={1000} value={capital} onChange={e => setCapital(Math.max(1000, +e.target.value || 0))} />
+              <button className="btn cta" onClick={follow} disabled={paperBusy}>{paperBusy ? 'Creating…' : `Start with ${fmtMoney(capital)}`}</button>
+            </div>
+          </section>
+          <section className="next-card">
+            <h2>Check it on past days</h2>
+            <p>The agent decides each recent day using only what was known then.</p>
+            <div className="field-row">
+              <label className="visually-hidden" htmlFor="agent-days">Days</label>
+              <select id="agent-days" value={days} onChange={e => setDays(+e.target.value)}>
+                {[3, 5, 10].map(n => <option key={n} value={n}>Last {n} trading days</option>)}
+              </select>
+              <button className="btn" onClick={backtest} disabled={btRunning || isOriginal}>{btRunning ? 'Running…' : 'Run'}</button>
+            </div>
+            {isOriginal && <p className="field-note">For the original TradingAgents, follow it in a paper account instead.</p>}
+          </section>
+        </div>
+      )}
+
+      {isOriginal && live && running && <JobProgress job={live} label="TradingAgents is working" note="Takes several minutes. You can keep this page open." />}
+
+      <section className={`panel desk-panel ${running ? 'busy' : ''}`} aria-label="How the agent decides">
+        <div className="panel-head">
+          <h2 className="panel-title">{call ? 'How it got there' : running ? `Working on ${sym}…` : 'The research desk'}</h2>
+          {!call && !running && <span className="sub">Six steps, same order every time</span>}
+        </div>
+        <div className="pad-x"><DeskRow state={id => { const i = STEPS.findIndex(s => s.id === id); return stepState(STEPS[i], i) }} /></div>
+        {(running || call) && (
+          <ol className="steps">
+            {shown.map(s => {
+              const i = STEPS.indexOf(s)
+              const st = stepState(s, i)
+              const out = stepOut(s.id)
+              return (
+                <li key={s.id} className={`step ${st}`}>
+                  <span className="step-dot" aria-hidden="true">{DESK[i].icon}</span>
+                  <div className="step-body">
+                    <p className="step-title"><b>{s.title}</b> <span className="sub">{s.who}{s.ai ? '' : ', code only'}{st === 'working' ? ', working…' : ''}</span></p>
+                    {out ? (
+                      <details>
+                        <summary>{s.id === 'market' ? 'Read the market report' : s.id === 'call' ? 'Read the reasoning' : out.split('\n')[0].slice(0, 140) + (out.length > 140 ? '…' : '')}</summary>
+                        <p className="step-out">{out}</p>
+                      </details>
+                    ) : <p className="step-what">{s.what}</p>}
+                  </div>
+                </li>
+              )
+            })}
+          </ol>
+        )}
+        {d?.report && (
+          <details className="pad-x raw">
+            <summary>Everything the agent read</summary>
+            <pre className="report">{d.report}</pre>
+          </details>
+        )}
+      </section>
+
+      {btLive && btRunning && <JobProgress job={btLive} label={`Checking the agent on ${plain(call?.symbol ?? '')}`} note="Days already decided are kept if the run stops." />}
+      {bt && call && (
+        <>
+          <ResultDetail result={bt} defaultTab="price" />
+          <VerdictPanel result={bt} bot={call.agent.title} stock={plain(call.symbol)} />
+          {decisions.length > 0 && (
+            <section className="panel sub-section">
+              <h3 className="panel-title">Day-by-day calls</h3>
+              <DecisionLog decisions={decisions} />
             </section>
           )}
-
-          {btLive && btRunning && <JobProgress job={btLive} label={`Checking the agent on ${plain(call?.symbol ?? '')}`} note="Days already decided are kept if the run stops." />}
-          {bt && call && (
-            <>
-              <ResultDetail result={bt} defaultTab="price" />
-              <VerdictPanel result={bt} bot={call.agent.title} stock={plain(call.symbol)} />
-              {decisions.length > 0 && (
-                <section className="panel sub-section">
-                  <h3 className="panel-title">Day-by-day calls</h3>
-                  <DecisionLog decisions={decisions} />
-                </section>
-              )}
-            </>
-          )}
-        </section>
-      </div>
+        </>
+      )}
+      <p className="fineprint center">Research tool, not investment advice. Prices from Yahoo Finance, about 15 minutes delayed.</p>
     </div>
   )
 }

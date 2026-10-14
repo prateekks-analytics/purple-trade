@@ -5,6 +5,8 @@ import { fmtMoney, fmtPct } from '../lib/tree'
 import { isLive } from '../lib/portfolio'
 import { DecisionLog, DownloadCode, errText, JobProgress, useJob } from './AgentBits'
 import { ResultDetail } from './Results'
+import { BotBadge } from './Desk'
+import { IconSpark } from './Icons'
 
 const HIDDEN = new Set(['tradingagents'])
 const CALL = { BUY: 'Buy', SELL: 'Sell', HOLD: 'Hold' } as const
@@ -157,11 +159,13 @@ export function Paper({ accountId, onSelect }: { accountId?: string; onSelect: (
       <div className="page">
         <header className="page-head">
           <h1>Paper accounts</h1>
-          <p className="lede">A paper account follows the AI agent or a rule bot forward with virtual money, so you can see how it does on days it has not seen. No real orders.</p>
+          <p className="lede">Follow the agent or a rule bot forward with virtual money. No real orders.</p>
         </header>
-        <div className="empty">
-          <p>No paper accounts yet. Ask the agent about a stock, or test a rule bot, then start a paper account from the result.</p>
-          <div className="head-actions"><a className="btn primary" href="#/agent">Ask the agent</a><a className="btn" href="#/test">Test a rule bot</a></div>
+        <div className="empty big">
+          <span className="empty-art" aria-hidden="true"><IconSpark /></span>
+          <h2>No paper accounts yet</h2>
+          <p>Get a call from the agent or test a bot, then follow it with virtual money.</p>
+          <div className="head-actions"><a className="btn glow" href="#/agent"><IconSpark /> Ask the agent</a><a className="btn" href="#/test">Test a rule bot</a></div>
         </div>
       </div>
     )
@@ -179,34 +183,25 @@ export function Paper({ accountId, onSelect }: { accountId?: string; onSelect: (
       <header className="page-head row">
         <div>
           <h1>Paper accounts</h1>
-          <p className="lede">Each account follows the AI agent or one rule bot with virtual money and shows every call it made and why.</p>
+          <p className="lede">Virtual money following the agent or a bot, with every call explained.</p>
         </div>
-        <div className="head-actions"><a className="btn primary" href="#/agent">Ask the agent</a><a className="btn" href="#/test">Test a rule bot</a></div>
+        <div className="head-actions"><a className="btn primary" href="#/agent"><IconSpark /> Ask the agent</a><a className="btn" href="#/test">Test a bot</a></div>
       </header>
 
-      <div className="trade-grid">
-        <nav className="panel watch" aria-label="Paper accounts">
-          <h2 className="panel-title">Accounts</h2>
-          {([['agent', 'Followed by the AI agent'], ['bot', 'Followed by a rule bot']] as const).map(([g, title]) => {
-            const list = (accounts ?? []).filter(a => isAgentAccount(a) === (g === 'agent'))
-            return list.length > 0 && (
-              <div key={g} className="watch-group">
-                <p className="watch-legend">{title}</p>
-                <ul className="watch-list">
-                  {list.map(a => (
-                    <li key={a.id}>
-                      <button className={`watch-row ${a.id === accountId ? 'on' : ''}`} aria-current={a.id === accountId ? 'page' : undefined} onClick={() => onSelect(a.id)}>
-                        <span className="watch-name">{a.name}</span>
-                        <span className="watch-meta">Since {a.start_date}{a.synthetic ? ', sample prices' : ''}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )
-          })}
-        </nav>
+      <nav className="bot-rail" aria-label="Paper accounts">
+        {(accounts ?? []).map(a => {
+          const agent = isAgentAccount(a)
+          return (
+            <button key={a.id} className={`bot-card ${a.id === accountId ? 'on' : ''}`} aria-current={a.id === accountId ? 'page' : undefined} onClick={() => onSelect(a.id)}>
+              {agent ? <span className="bot-badge md look-violet" aria-hidden="true"><IconSpark /></span> : <BotBadge id={a.agent_id} />}
+              <span className="bot-card-name">{a.name}</span>
+              <span className="bot-card-meta">{agent ? 'AI agent' : 'Rule bot'}, since {a.start_date}{a.synthetic ? ', sample' : ''}</span>
+            </button>
+          )
+        })}
+      </nav>
 
+      <div className="trade-grid two">
         <section className="trade-main" aria-label="Account">
           {err && <p className="error-text" role="alert">{err}</p>}
           {!view || !m ? <div className="panel empty-main"><p>{accountId ? 'Loading the account…' : 'Choose an account.'}</p></div> : (

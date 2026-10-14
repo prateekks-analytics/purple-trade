@@ -6,6 +6,8 @@ import { DownloadCode, errText } from './AgentBits'
 import { Assumptions, DataPicker, ResultDetail, VerdictPanel } from './Results'
 import { CandleChart, RangeTabs, sliceRange, type Bar as PriceBar, type RangeKey } from './Charts'
 import { isLive } from '../lib/portfolio'
+import { BotBadge } from './Desk'
+import { IconPlay, IconPlus, IconSpark } from './Icons'
 
 /** One row in the bot chooser: a built-in rule bot or a saved version of the person's own bot. */
 interface Bot {
@@ -19,11 +21,6 @@ interface Bot {
   capital: number
   sizePct: number
 }
-
-const GROUPS = [
-  { id: 'rules', title: 'Built-in bots' },
-  { id: 'mine', title: 'Your bots' },
-] as const
 
 const DEFAULT_COSTS = { fee_bps: 3, slippage_bps: 5 }
 /** Bar sizes a rule bot's paper account can follow (live symbols only for intraday; matches the server). */
@@ -112,51 +109,49 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
 
   return (
     <div className="page wide">
-      <header className="page-head">
-        <p className="kicker">Rule bots</p>
-        <h1>Test a rule bot</h1>
-        <p className="lede">A rule bot follows fixed indicator rules: same prices, same trades, no AI. Pick one, run it on past prices,
-          then follow it in a paper account. Want an AI opinion on a stock instead? <a href="#/agent">Ask the AI agent</a>.</p>
+      <header className="page-head row">
+        <div>
+          <h1>Test a rule bot</h1>
+          <p className="lede">Fixed rules, no AI. Pick a bot and run it on past prices.</p>
+        </div>
+        <a className="btn quiet" href="#/agent"><IconSpark /> Ask the AI agent instead</a>
       </header>
 
-      <div className="trade-grid">
-        {/* ---------- bot list ---------- */}
-        <aside className="panel watch" aria-label="Rule bots">
-          <h2 className="panel-title">Rule bots</h2>
-          {bots === null ? <p className="field-note">Loading bots…</p> : GROUPS.map(g => {
-            const list = bots.filter(b => b.group === g.id)
-            return (
-              <fieldset key={g.id} className="watch-group">
-                <legend>{g.title}</legend>
-                {list.length === 0 ? (
-                  <p className="watch-empty">No saved bots yet. <button className="link-btn" onClick={onBuild}>Build one</button></p>
-                ) : list.map(b => (
-                  <label key={b.id} className={`watch-row ${botId === b.id ? 'on' : ''}`} title={b.entry ? `Buys when ${b.entry}. Sells when ${b.exit}.` : undefined}>
-                    <input type="radio" name="bot" className="visually-hidden" checked={botId === b.id} onChange={() => setBotId(b.id)} />
-                    <span className="watch-name">{b.title}</span>
-                    <span className="watch-meta">{b.group === 'mine' ? b.speed : 'Instant'}</span>
-                  </label>
-                ))}
-              </fieldset>
-            )
-          })}
-          {bots && <p className="watch-empty"><button className="link-btn" onClick={onBuild}>+ Build a new bot</button></p>}
-        </aside>
+      <div className="bot-rail" role="radiogroup" aria-label="Rule bots">
+        {bots === null ? <p className="field-note">Loading bots…</p> : (
+          <>
+            {bots.map(b => (
+              <label key={b.id} className={`bot-card ${botId === b.id ? 'on' : ''}`} title={b.entry ? `Buys when ${b.entry}. Sells when ${b.exit}.` : undefined}>
+                <input type="radio" name="bot" className="visually-hidden" checked={botId === b.id} onChange={() => setBotId(b.id)} />
+                <BotBadge id={b.id} />
+                <span className="bot-card-name">{b.title}</span>
+                <span className="bot-card-meta">{b.group === 'mine' ? `Yours, ${b.speed.toLowerCase()}` : 'Built in'}</span>
+              </label>
+            ))}
+            <button className="bot-card add" onClick={onBuild}>
+              <span className="bot-badge md look-ghost" aria-hidden="true"><IconPlus /></span>
+              <span className="bot-card-name">Build your own</span>
+              <span className="bot-card-meta">From a plain-words idea</span>
+            </button>
+          </>
+        )}
+      </div>
 
+      <div className="trade-grid two">
         {/* ---------- chart, verdict ---------- */}
         <section className="trade-main" aria-label="Chart and result">
           {!bot ? (
             <div className="panel empty-main">
-              <h2>Pick a bot to start</h2>
-              <p>Each bot runs instantly on past prices and shows every trade it would have made.</p>
+              <span className="empty-art" aria-hidden="true"><IconPlay /></span>
+              <h2>Pick a bot above</h2>
+              <p>It runs in a second and shows every trade it would have made.</p>
             </div>
           ) : (
             <>
               <div className="panel instrument">
                 <div className="instrument-head">
                   <div className="instrument-id">
-                    <p className="sub">{bot.group === 'mine' ? 'Your bot' : 'Built-in bot'}</p>
-                    <h2 className="instrument-title">{bot.title}</h2>
+                    <h2 className="instrument-title"><BotBadge id={bot.id} size="sm" />{bot.title}</h2>
                     {bot.entry && <p className="rule-line"><span className="side buy">Buy</span> {bot.entry}<span className="side sell">Sell</span> {bot.exit}</p>}
                   </div>
                   <div className="instrument-stock">
@@ -185,7 +180,7 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
 
         {/* ---------- ticket ---------- */}
         <aside className="panel ticket" aria-label="Backtest ticket">
-          <h2 className="panel-title">Backtest ticket</h2>
+          <h2 className="panel-title">Run a backtest</h2>
           {!bot ? <p className="field-note">Choose a bot from the list.</p> : (
             <>
               <div className="ticket-fields">
@@ -198,10 +193,10 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
                 <div><dt>Starting money</dt><dd className="num">{fmtMoney(bot.capital)}</dd></div>
                 <div><dt>Per trade</dt><dd>{bot.sizePct >= 100 ? 'Whole account' : `${bot.sizePct}% of account`}</dd></div>
                 <div><dt>Costs per side</dt><dd>{((bot.costs.fee_bps + bot.costs.slippage_bps) / 100).toFixed(2)}%</dd></div>
-                <div><dt>Time · AI</dt><dd>About a second · none</dd></div>
+                <div><dt>Time</dt><dd>About a second, no AI</dd></div>
               </dl>
               <button className="btn primary block" onClick={run} disabled={!datasetId || busy}>
-                {busy ? 'Running…' : result ? 'Run again' : 'Run backtest'}
+                <IconPlay /> {busy ? 'Running…' : result ? 'Run again' : 'Run backtest'}
               </button>
               {err && <p className="error-text" role="alert">{err}</p>}
 
@@ -212,8 +207,8 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
 
               {result && (
                 <div className="ticket-paper">
-                  <h3>Paper trade this bot</h3>
-                  <p className="field-note">Follows the bot forward with virtual money from the latest day. No real orders.</p>
+                  <h3>Follow it with paper money</h3>
+                  <p className="field-note">Trades forward from the latest day. No real orders.</p>
                   <div className="field">
                     <label htmlFor="paper-capital">Starting money (₹)</label>
                     <input id="paper-capital" type="number" min={1000} step={1000} value={capital} onChange={e => setCapital(Math.max(1000, +e.target.value || 0))} />

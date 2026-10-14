@@ -15,7 +15,7 @@ import { fmtMoney, fmtPct } from './lib/tree'
 
 type Route =
   | { page: 'overview' }
-  | { page: 'agent' }
+  | { page: 'agent'; symbol?: string }
   | { page: 'test'; bot?: string }
   | { page: 'build' }
   | { page: 'strategy'; id: string }
@@ -26,7 +26,9 @@ function parseRoute(): Route {
   let m = h.match(/^#\/s\/([\w-]+)/)
   if (m) return { page: 'strategy', id: m[1] }
   if (h.startsWith('#/build')) return { page: 'build' }
-  if (h.startsWith('#/agent') || /^#\/test\/(purple-agent|tradingagents|news-pulse|crew-nse)/.test(h)) return { page: 'agent' }
+  m = h.match(/^#\/agent(?:\/([\w&.^-]+))?/)
+  if (m) return { page: 'agent', symbol: m[1] }
+  if (/^#\/test\/(purple-agent|tradingagents|news-pulse|crew-nse)/.test(h)) return { page: 'agent' }
   m = h.match(/^#\/paper(?:\/([\w-]+))?/)
   if (m) return { page: 'paper', id: m[1] }
   m = h.match(/^#\/test(?:\/([\w:-]+))?/)
@@ -35,11 +37,11 @@ function parseRoute(): Route {
 }
 
 const SECTIONS = [
-  { page: 'overview', hash: '#/', label: 'Overview', icon: <IconOverview />, group: '' },
-  { page: 'agent', hash: '#/agent', label: 'Ask the agent', icon: <IconSpark />, group: 'AI agent' },
-  { page: 'test', hash: '#/test', label: 'Test a bot', icon: <IconTest />, group: 'Rule bots' },
-  { page: 'build', hash: '#/build', label: 'Build a bot', icon: <IconBuild />, group: '' },
-  { page: 'paper', hash: '#/paper', label: 'Paper accounts', icon: <IconPaper />, group: 'Practice' },
+  { page: 'overview', hash: '#/', label: 'Home', short: 'Home', icon: <IconOverview />, group: '' },
+  { page: 'agent', hash: '#/agent', label: 'Ask the agent', short: 'Agent', icon: <IconSpark />, group: 'AI agent' },
+  { page: 'test', hash: '#/test', label: 'Test a bot', short: 'Bots', icon: <IconTest />, group: 'Rule bots' },
+  { page: 'build', hash: '#/build', label: 'Build a bot', short: 'Build', icon: <IconBuild />, group: '' },
+  { page: 'paper', hash: '#/paper', label: 'Paper accounts', short: 'Paper', icon: <IconPaper />, group: 'Practice' },
 ] as const
 
 function initialTheme(): 'light' | 'dark' {
@@ -105,48 +107,54 @@ export default function App() {
     <div className="shell">
       <a className="skip" href="#main">Skip to content</a>
       <aside className="sidebar" aria-label="Main navigation">
-        <a className="brand" href="#/" aria-label="Purple Trade overview"><Logo /><span>Purple Trade</span></a>
+        <a className="brand" href="#/" aria-label="Purple Trade home"><Logo /><span>Purple Trade</span></a>
         <nav className="side-nav">
           {SECTIONS.map(s => [
             s.group && <span key={`g-${s.page}`} className="side-group">{s.group}</span>,
-            <a key={s.page} href={s.hash} title={s.label} className={section === s.page ? 'on' : ''} aria-current={section === s.page ? 'page' : undefined}>
+            <a key={s.page} href={s.hash} title={s.label} className={`${section === s.page ? 'on' : ''} ${s.page === 'agent' ? 'hot' : ''}`} aria-current={section === s.page ? 'page' : undefined}>
               {s.icon}<span>{s.label}</span>
             </a>,
           ])}
         </nav>
         <div className="side-foot">
           <button className={`side-ai ${health?.ai.available ? 'on' : 'off'}`} onClick={() => setAiOpen(true)} title={health?.ai.detail}>
-            <IconSpark />
+            <i className="side-ai-dot" aria-hidden="true" />
             <span>{health?.ai.available
-              ? <>AI connected<small>{ai ? `${ai.provider} · ${ai.model}` : `${health.ai.provider} · ${health.ai.model}`}</small></>
-              : <>Connect an AI<small>For ideas and AI agents</small></>}</span>
+              ? <>AI connected<small>{ai ? ai.model : health.ai.model}</small></>
+              : <>Connect an AI<small>Free with Google Gemini</small></>}</span>
           </button>
           <button className="side-theme" onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
             aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
             {theme === 'dark' ? <IconSun /> : <IconMoon />}<span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span>
           </button>
-          <p className="side-note">Research and paper trading only. No real orders.</p>
+          <p className="side-note">Virtual money only. No real orders.</p>
         </div>
       </aside>
 
+      <nav className="tabbar" aria-label="Sections">
+        {SECTIONS.map(s => (
+          <a key={s.page} href={s.hash} className={`${section === s.page ? 'on' : ''} ${s.page === 'agent' ? 'hot' : ''}`} aria-current={section === s.page ? 'page' : undefined}>
+            {s.icon}<span>{s.short}</span>
+          </a>
+        ))}
+      </nav>
+
       <div className="main-col">
         <header className="bar">
-          <div className="bar-stat">
-            <span className="bar-label">Paper equity</span>
+          <a className="bar-brand" href="#/" aria-label="Purple Trade home"><Logo size={26} /><span>Purple Trade</span></a>
+          <a className="wallet" href="#/paper" title="All paper accounts together">
+            <span className="wallet-label">Paper money</span>
             <b className="num">{sum ? fmtMoney(sum.value) : '—'}</b>
-          </div>
-          <div className="bar-stat">
-            <span className="bar-label">Total P&amp;L</span>
-            <b className={`num ${sum && sum.change > 0 ? 'pos' : sum && sum.change < 0 ? 'neg' : ''}`}>
-              {sum ? `${sum.change >= 0 ? '+' : '−'}${fmtMoney(Math.abs(sum.change))} (${fmtPct(sum.changePct)})` : '—'}</b>
-          </div>
-          <div className="bar-stat">
-            <span className="bar-label">Accounts</span>
-            <b className="num">{portfolio ? portfolio.length : '—'}</b>
-          </div>
+            <span className={`wallet-chg num ${sum && sum.change > 0 ? 'pos' : sum && sum.change < 0 ? 'neg' : ''}`}>
+              {sum ? `${sum.change >= 0 ? '+' : '−'}${fmtMoney(Math.abs(sum.change))} (${fmtPct(sum.changePct)})` : ''}</span>
+            <span className="wallet-count">{portfolio ? `${portfolio.length} account${portfolio.length === 1 ? '' : 's'}` : ''}</span>
+          </a>
           <span className={`market ${market.open ? 'open' : 'closed'}`} title="Regular NSE session, Monday to Friday 09:15–15:30 IST. Holidays not checked.">
-            <i aria-hidden />{market.label}, {market.time}
+            <i aria-hidden /><span>{market.label}<span className="market-time">, {market.time}</span></span>
           </span>
+          <button className={`bar-ai ${health?.ai.available ? 'on' : 'off'}`} onClick={() => setAiOpen(true)} aria-label={health?.ai.available ? 'AI connected. Change AI' : 'Connect an AI'}>
+            <IconSpark />
+          </button>
         </header>
         <AiConnect key={aiOpen ? 'open' : 'closed'} open={aiOpen} hosted={Boolean(health?.hosted)} onClose={() => setAiOpen(false)} />
         {health?.hosted && (
@@ -158,7 +166,7 @@ export default function App() {
               onBack={() => { setIdea(undefined); setImported(undefined); go('#/build') }} onRenamed={() => {}}
               onTest={vid => go(`#/test/version:${vid}`)} />
           ) : route.page === 'agent' ? (
-            <Agent key={aiVersion} health={health} onPaperCreated={id => go(`#/paper/${id}`)} />
+            <Agent key={`${aiVersion}-${route.symbol ?? ''}`} health={health} initialSymbol={route.symbol} onPaperCreated={id => go(`#/paper/${id}`)} />
           ) : route.page === 'build' ? (
             <Build key={aiVersion} health={health} onOpen={open} onTest={bot => go(`#/test/${bot}`)} />
           ) : route.page === 'paper' ? (
@@ -167,7 +175,7 @@ export default function App() {
             <TestBot key={`${route.bot ?? 'none'}-${aiVersion}`} initialBot={route.bot}
               onPaperCreated={id => go(`#/paper/${id}`)} onBuild={() => go('#/build')} />
           ) : (
-            <Overview portfolio={portfolio} total={sum} />
+            <Overview portfolio={portfolio} total={sum} onAsk={sym => go(`#/agent/${sym}`)} />
           )}
         </main>
       </div>

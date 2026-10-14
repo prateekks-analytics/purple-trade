@@ -3,11 +3,13 @@ import { api } from '../api'
 import type { Health, Proposal, StrategySummary, Template } from '../types'
 import { errText } from './AgentBits'
 import { openAiConnect } from '../lib/aiSettings'
+import { BotBadge } from './Desk'
+import { IconPlay, IconSpark, IconUpload, IconUser } from './Icons'
 
 const EXAMPLES = [
-  'Buy when RSI is 10 and sell when RSI goes above 90',
-  'Buy when the share drops below its 20-day moving average; sell after 2 days, or at 1% profit, or 1% stop loss',
-  'Buy when the 10-day EMA crosses above the 50-day EMA; sell when it crosses back below or on a 7% loss',
+  { label: 'RSI 10 in, 90 out', text: 'Buy when RSI is 10 and sell when RSI goes above 90' },
+  { label: 'Dip below the 20-day average', text: 'Buy when the share drops below its 20-day moving average; sell after 2 days, or at 1% profit, or 1% stop loss' },
+  { label: 'EMA 10 / 50 crossover', text: 'Buy when the 10-day EMA crosses above the 50-day EMA; sell when it crosses back below or on a 7% loss' },
 ]
 
 export function Build({ health, onOpen, onTest }: {
@@ -55,74 +57,76 @@ export function Build({ health, onOpen, onTest }: {
   }
 
   return (
-    <div className="page">
-      <header className="page-head">
-        <p className="kicker">Rule bots</p>
-        <h1>Build a bot</h1>
-        <p className="lede">Describe a trading idea in plain words, or upload a file that describes one. You get a rule bot: exact buy and sell rules that you can read, edit and test. Nothing you upload is ever run.</p>
-      </header>
-
-      <section className="compose" aria-label="Describe an idea">
-        <label htmlFor="idea" className="label">Your idea</label>
-        <textarea id="idea" rows={3} value={idea} onChange={e => setIdea(e.target.value)}
-          placeholder="Buy when the close is above the 200-day average and RSI(14) is under 40; take profit at 6%, stop at 3%"
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); start(idea) } }} />
-        <div className="compose-row">
-          <p className="field-note">
-            <span className={`status-dot ${aiReady ? 'on' : 'off'}`} aria-hidden />
-            {health ? (aiReady ? (health.ai.provider === 'gemini' ? `Drafted by Google ${health.ai.model} (free tier). Your idea is sent to Google.` : `Drafted by ${health.ai.model} on this computer. Free.`) : 'No AI connected yet. You can still write rules by hand.') : 'Checking the AI…'}
-            {health && !aiReady && <> <button className="link-btn" onClick={openAiConnect}>Connect an AI</button></>}
-          </p>
-          <div className="compose-actions">
-            <input ref={fileRef} type="file" hidden aria-label="File to turn into rules"
-              accept=".py,.pine,.js,.ts,.mq4,.mq5,.mql,.cs,.java,.r,.ipynb,.txt,.md,.json,.csv,.tsv,.xlsx,.xlsm,.docx,.pdf"
-              onChange={e => upload(e.target.files?.[0])} />
-            <button className="btn quiet" onClick={() => fileRef.current?.click()} disabled={Boolean(uploading)}
-              title="Bot code (Python, Pine Script, JavaScript, MQL), notes, Excel, Word, PDF or a Purple .json file">
-              {uploading ? 'Reading the file…' : 'Upload a file'}
-            </button>
-            <button className="btn primary" onClick={() => aiReady ? start(idea) : openAiConnect()} disabled={busy || !idea.trim()}>{busy ? 'Opening…' : 'Draft the rules'}</button>
+    <div className="page wide build-page">
+      <section className="hero hero-build" aria-labelledby="build-h">
+        <h1 id="build-h" className="hero-title">Describe a trading idea. Get a bot.</h1>
+        <div className="compose">
+          <label htmlFor="idea" className="visually-hidden">Your idea</label>
+          <textarea id="idea" rows={3} value={idea} onChange={e => setIdea(e.target.value)}
+            placeholder="Buy when the close is above the 200-day average and RSI(14) is under 40; take profit at 6%, stop at 3%"
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); start(idea) } }} />
+          <div className="compose-row">
+            <p className="compose-ai">
+              <span className={`status-dot ${aiReady ? 'on' : 'off'}`} aria-hidden />
+              {health ? (aiReady ? `Drafted by ${health.ai.model}${health.ai.provider === 'gemini' ? ' (your idea is sent to Google)' : ''}` : 'No AI yet: you can still write rules by hand.') : 'Checking the AI…'}
+              {health && !aiReady && <> <button className="link-btn on-dark" onClick={openAiConnect}>Connect an AI</button></>}
+            </p>
+            <div className="compose-actions">
+              <input ref={fileRef} type="file" hidden aria-label="File to turn into rules"
+                accept=".py,.pine,.js,.ts,.mq4,.mq5,.mql,.cs,.java,.r,.ipynb,.txt,.md,.json,.csv,.tsv,.xlsx,.xlsm,.docx,.pdf"
+                onChange={e => upload(e.target.files?.[0])} />
+              <button className="btn ghost-dark" onClick={() => fileRef.current?.click()} disabled={Boolean(uploading)}
+                title="Bot code (Python, Pine Script, JavaScript, MQL), notes, Excel, Word, PDF or a Purple .json file. Nothing is run.">
+                <IconUpload /> {uploading ? 'Reading the file…' : 'Upload a file'}
+              </button>
+              <button className="btn glow" onClick={() => aiReady ? start(idea) : openAiConnect()} disabled={busy || !idea.trim()}><IconSpark /> {busy ? 'Opening…' : 'Draft the rules'}</button>
+            </div>
           </div>
         </div>
-        {uploading && <p className="field-note">Turning {uploading} into rules. This can take up to a minute.</p>}
-        <div className="examples">
-          <span className="field-note">Examples:</span>
-          {EXAMPLES.map(x => <button key={x} className="example" onClick={() => setIdea(x)}>{x}</button>)}
+        {uploading && <p className="hero-note">Turning {uploading} into rules. This can take up to a minute.</p>}
+        <div className="chips hero-chips" aria-label="Examples">
+          {EXAMPLES.map(x => <button key={x.label} className="chip" title={x.text} onClick={() => setIdea(x.text)}>{x.label}</button>)}
         </div>
-        {err && <p className="error-text" role="alert">{err}</p>}
+        {err && <p className="hero-error" role="alert">{err}</p>}
       </section>
 
-      <section className="library" aria-labelledby="lib-h">
-        <h2 id="lib-h">Your bots</h2>
-        {list === null ? <p className="field-note">Loading…</p> : list.length === 0 ? (
-          <p className="field-note">None yet. Bots you draft appear here with their saved versions.</p>
-        ) : (
-          <table className="strategy-table">
-            <thead><tr><th scope="col">Name</th><th scope="col">Status</th><th scope="col">Last changed</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
-            <tbody>
-              {list.map(s => (
-                <tr key={s.id}>
-                  <td><button className="link-btn strong" onClick={() => onOpen(s.id)}>{s.name}</button></td>
-                  <td className="sub">{s.versions ? `${s.versions} saved version${s.versions > 1 ? 's' : ''}` : 'Draft, not saved'}</td>
-                  <td className="sub">{new Date(s.updated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                  <td className="r row-actions">
-                    <button className="btn quiet sm" onClick={() => onOpen(s.id)} aria-label={`Open ${s.name}`}>Open</button>
-                    {s.versions > 0 && <button className="btn quiet sm" onClick={() => test(s)}>Test latest version</button>}
-                    <button className="link-btn danger" onClick={() => remove(s)} aria-label={`Delete ${s.name}`}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {templates.length > 0 && (
-          <p className="starters">
-            <span className="field-note">Or start from a ready-made rule set:</span>
+      {templates.length > 0 && (
+        <section className="library" aria-labelledby="tpl-h">
+          <h2 id="tpl-h" className="section-title">Or start from a ready-made rule set</h2>
+          <div className="tpl-grid">
             {templates.map(t => (
-              <button key={t.id} className="example" title={t.blurb}
-                onClick={async () => { const s = await api.createStrategy('Untitled strategy', t.id); onOpen(s.id) }}>{t.title}</button>
+              <button key={t.id} className="tpl-card"
+                onClick={async () => { const s = await api.createStrategy('Untitled strategy', t.id); onOpen(s.id) }}>
+                <BotBadge id={t.id} />
+                <b>{t.title}</b>
+                <span>{t.blurb}</span>
+              </button>
             ))}
-          </p>
+          </div>
+        </section>
+      )}
+
+      <section className="library" aria-labelledby="lib-h">
+        <h2 id="lib-h" className="section-title">Your bots</h2>
+        {list === null ? <p className="field-note">Loading…</p> : list.length === 0 ? (
+          <p className="field-note">None yet. Bots you draft show up here.</p>
+        ) : (
+          <ul className="mine-grid">
+            {list.map(s => (
+              <li key={s.id} className="mine-card">
+                <button className="mine-open" onClick={() => onOpen(s.id)} aria-label={`Open ${s.name}`}>
+                  <span className="bot-badge md look-violet" aria-hidden="true"><IconUser /></span>
+                  <b>{s.name}</b>
+                  <span className={`badge ${s.versions ? 'ok' : ''}`}>{s.versions ? `${s.versions} version${s.versions > 1 ? 's' : ''}` : 'Draft'}</span>
+                  <span className="sub">Changed {new Date(s.updated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                </button>
+                <div className="mine-actions">
+                  {s.versions > 0 && <button className="btn sm" onClick={() => test(s)}><IconPlay /> Test</button>}
+                  <button className="link-btn danger" onClick={() => remove(s)} aria-label={`Delete ${s.name}`}>Delete</button>
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
     </div>

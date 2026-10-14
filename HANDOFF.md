@@ -7,6 +7,20 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026)
 
+**Consumer UI redesign (15 Oct, night; frontend only; restore point 65ee27b)**
+- User brief: less text, more inviting, "real paid app" feel; purple only as subtle streaks, not everywhere.
+- Look: neutral canvas (light #f4f5f7 / dark #0b0c0e), ink-black buttons, purple as streaks only (`--streak`
+  gradient: active nav bar, stock-name underline, soft hero light band, rank-1 / selected card edge, chart lines).
+  Saffron #ffb547 tiny highlights. Fonts: Bricolage Grotesque (display, numbers) + Plus Jakarta Sans (body).
+- New `components/Desk.tsx`: `AskSentence` ("Should I buy RELIANCE?" with the symbol as an inline field),
+  `DeskRow` (six analyst faces that light up from the real job log), `botLook`/`BotBadge` (icon + colour per bot).
+- Home: hero question → `#/agent/<SYMBOL>` (prefills, does not auto-run), three picture cards, paper money,
+  podium of top-3 rule bots. Agent: hero ask bar, call card with big word, confidence ring, stop/close/target
+  ladder, two next-step cards, research desk (steps collapsed). Test/Paper: bot/account card rail on top.
+  Build: hero composer, template cards, your-bots cards. Phones: bottom tab bar, compact top bar.
+- Verified: tsc + build clean, 81 tests pass, 1366 px and 375 px (no sideways scroll), light + dark, no console
+  errors; one real call on free Gemini (TCS → Wait, 65%) rendered the call card.
+
 **Agent vs bot split (15 Oct, late; commits cd07db6, a7bb2c8, ecf6461; not pushed)**
 - Wording everywhere: **AI agent** = an AI that researches a stock and makes a call; **rule bot** = fixed indicator
   rules, no AI. Sidebar groups: Overview · AI agent (Ask the agent `#/agent`) · Rule bots (Test a bot `#/test`, Build a

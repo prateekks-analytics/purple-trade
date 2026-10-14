@@ -6,14 +6,17 @@ import { fmtMoney, fmtPct } from '../lib/tree'
 import { LineChart } from './LineChart'
 import { Spark } from './Charts'
 import { isAgentAccount } from './Paper'
+import { AskSentence, BotBadge, DeskRow, POPULAR } from './Desk'
+import { IconSpark } from './Icons'
 
 interface Board { bot: SuperAgentInfo; result: BacktestResult | null }
 
 const CALL = { BUY: 'Buy', SELL: 'Sell', HOLD: 'Hold' } as const
 
-export function Overview({ portfolio, total }: {
+export function Overview({ portfolio, total, onAsk }: {
   portfolio: Holding[] | null
   total: { value: number; start: number; change: number; changePct: number; day: number } | null
+  onAsk: (symbol: string) => void
 }) {
   const [dataset, setDataset] = useState<Dataset | null>(null)
   const [datasets, setDatasets] = useState<Dataset[]>([])
@@ -52,56 +55,82 @@ export function Overview({ portfolio, total }: {
   const holdBH = board?.[0]?.result?.metrics.buy_hold_return_pct
   const stock = dataset ? (dataset.synthetic ? 'Sample stock' : (dataset.symbol ?? dataset.name).replace(/\.NS$/, '')) : ''
 
-  return (
-    <div className="page wide">
-      <header className="page-head row">
-        <div>
-          <h1>Overview</h1>
-          <p className="lede">Two ways to decide on a stock, and one place to practise with virtual money.</p>
-        </div>
-      </header>
+  const [ask, setAsk] = useState('RELIANCE')
+  const podium = board?.filter(b => b.result && b.result.trades.length > 0).slice(0, 3) ?? []
+  const rest = board?.filter(b => !podium.includes(b)) ?? []
+  const tone = (v: number | null | undefined) => (v == null ? '' : v > 0 ? 'pos' : v < 0 ? 'neg' : '')
 
-      <div className="start-grid">
-        <section className="panel start-card agent" aria-labelledby="st-agent">
-          <p className="kicker">AI agent</p>
-          <h2 id="st-agent">Ask for a Buy, Hold or Sell call</h2>
-          <p>Name an NSE stock. The agent reads prices, news, trader posts and the company's financials, debates bull vs bear, and makes one call with a stop-loss. About a minute.</p>
-          <div className="head-actions"><a className="btn primary" href="#/agent">Ask the agent</a></div>
-        </section>
-        <section className="panel start-card" aria-labelledby="st-bots">
-          <p className="kicker">Rule bots</p>
-          <h2 id="st-bots">Test fixed trading rules</h2>
-          <p>A bot follows exact rules, such as "buy when SMA 50 crosses above SMA 200". No AI: test it instantly on past prices, or build your own from an idea.</p>
-          <div className="head-actions"><a className="btn" href="#/test">Test a bot</a><a className="btn quiet" href="#/build">Build a bot</a></div>
-        </section>
-        <section className="panel start-card" aria-labelledby="st-paper">
-          <p className="kicker">Practice</p>
-          <h2 id="st-paper">Follow one with virtual money</h2>
-          <p>Start a paper account from the agent's call or a bot's test. It trades on live NSE prices after each session, with every call explained. No real orders.</p>
-          <div className="head-actions"><a className="btn" href="#/paper">Paper accounts</a></div>
-        </section>
+  return (
+    <div className="page wide home">
+      <section className="hero" aria-labelledby="hero-h">
+        <div className="hero-copy">
+          <h1 id="hero-h" className="visually-hidden">Ask the AI agent about a stock</h1>
+          <AskSentence value={ask} onChange={setAsk} onSubmit={() => ask && onAsk(ask)} id="hero-symbol" />
+          <div className="chips hero-chips" role="group" aria-label="Popular stocks">
+            {POPULAR.map(p => <button key={p} type="button" className={`chip ${ask === p ? 'on' : ''}`} onClick={() => setAsk(p)}>{p}</button>)}
+          </div>
+          <div className="hero-actions">
+            <button className="btn glow lg" onClick={() => ask && onAsk(ask)} disabled={!ask}><IconSpark /> Ask the agent</button>
+            <span className="hero-note">Buy, hold or sell, with a stop-loss. About a minute.</span>
+          </div>
+        </div>
+        <div className="hero-desk">
+          <DeskRow />
+          <p className="hero-desk-note">Six analysts check charts, news, trader chatter and financials, then argue it out.</p>
+        </div>
+      </section>
+
+      <div className="path-grid">
+        <a className="path-card bots" href="#/test">
+          <span className="path-art" aria-hidden="true">
+            <svg viewBox="0 0 160 70" width="100%" height="70" preserveAspectRatio="xMidYMid meet">
+              {[18, 30, 24, 38, 33, 46, 40, 52, 47, 58].map((h, i) => (
+                <rect key={i} x={6 + i * 15} y={66 - h} width="9" height={Math.max(8, h * 0.45)} rx="2" className={i % 3 === 1 ? 'down' : 'up'} />
+              ))}
+              <path d="M10 52 L55 38 L95 28 L150 8" className="trace" />
+            </svg>
+          </span>
+          <span className="path-title">Test a rule bot</span>
+          <span className="path-sub">Fixed rules, no AI. Every trade on past prices in a second.</span>
+        </a>
+        <a className="path-card build" href="#/build">
+          <span className="path-art" aria-hidden="true">
+            <span className="mini-rule"><i className="b">Buy</i> RSI(14) &lt; 30</span>
+            <span className="mini-rule"><i className="s">Sell</i> RSI(14) &gt; 70</span>
+          </span>
+          <span className="path-title">Build your own bot</span>
+          <span className="path-sub">Type an idea in plain words. Get exact rules you can edit.</span>
+        </a>
+        <a className="path-card paper" href="#/paper">
+          <span className="path-art" aria-hidden="true">
+            <b className="path-money num">{total ? fmtMoney(total.value) : '₹1,00,000'}</b>
+            <span className="path-money-sub">virtual money</span>
+          </span>
+          <span className="path-title">Practise with paper money</span>
+          <span className="path-sub">Follow the agent or a bot on live prices. No real orders.</span>
+        </a>
       </div>
 
       <div className="grid-2">
         <section className="panel equity-panel" aria-labelledby="eq-h">
           <div className="panel-head">
             <div>
-              <h2 id="eq-h" className="panel-title">Paper equity</h2>
+              <h2 id="eq-h" className="panel-title">Your paper money</h2>
               <p className="big-num">{total ? fmtMoney(total.value) : '—'}</p>
               {total && portfolio && portfolio.length > 0 && (
                 <p className={`delta ${total.change >= 0 ? 'pos' : 'neg'}`}>
-                  {total.change >= 0 ? '▲' : '▼'} {fmtMoney(Math.abs(total.change))} ({fmtPct(total.changePct)}) since the accounts opened
-                  <span className="sub"> · last day {total.day >= 0 ? '+' : '−'}{fmtMoney(Math.abs(total.day))}</span>
+                  <span className="delta-pill">{total.change >= 0 ? '▲' : '▼'} {fmtMoney(Math.abs(total.change))} ({fmtPct(total.changePct)})</span>
+                  <span className="sub">since opening, last day {total.day >= 0 ? '+' : '−'}{fmtMoney(Math.abs(total.day))}</span>
                 </p>
               )}
             </div>
           </div>
           {combined ? (
-            <LineChart dates={combined.dates} series={[{ key: 'eq', label: 'Paper equity', color: 'var(--series-1)', values: combined.values }]}
+            <LineChart dates={combined.dates} series={[{ key: 'eq', label: 'Paper money', color: 'var(--series-1)', values: combined.values }]}
               area height={220} ariaLabel="Combined value of all paper accounts" format={v => fmtMoney(v)} />
           ) : (
             <div className="empty-chart">
-              <p>{portfolio === null ? 'Loading accounts…' : portfolio.length ? 'The chart starts after the accounts move forward a day.' : 'No paper accounts yet. Ask the agent or test a bot, then follow it with virtual money.'}</p>
+              <p>{portfolio === null ? 'Loading accounts…' : portfolio.length ? 'The chart starts once the accounts move forward a day.' : 'No paper accounts yet.'}</p>
               {portfolio !== null && !portfolio.length && <a className="btn primary" href="#/agent">Ask the agent</a>}
             </div>
           )}
@@ -109,21 +138,22 @@ export function Overview({ portfolio, total }: {
 
         <section className="panel" aria-labelledby="acc-h">
           <div className="panel-head">
-            <h2 id="acc-h" className="panel-title">Paper accounts</h2>
-            <a className="link-btn" href="#/paper">View all</a>
+            <h2 id="acc-h" className="panel-title">Accounts</h2>
+            <a className="link-btn" href="#/paper">See all</a>
           </div>
-          {!portfolio?.length ? <p className="field-note">{portfolio === null ? 'Loading…' : 'None yet.'}</p> : (
+          {!portfolio?.length ? <p className="field-note pad-x">{portfolio === null ? 'Loading…' : 'None yet.'}</p> : (
             <ul className="acct-list">
               {portfolio.map(({ account, view }) => {
                 const m = view?.result.metrics
+                const agent = isAgentAccount(account)
                 return (
                   <li key={account.id}>
                     <a href={`#/paper/${account.id}`}>
-                      <span className="acct-name"><b>{account.name}</b><span className="sub">{isAgentAccount(account) ? 'AI agent' : 'Rule bot'} · since {account.start_date}</span></span>
-                      <Spark values={view?.result.equity.map(e => e.equity) ?? []} width={72} height={26} label={`${account.name} value trend`} />
+                      {agent ? <span className="bot-badge md look-violet" aria-hidden="true"><IconSpark /></span> : <BotBadge id={account.agent_id} />}
+                      <span className="acct-name"><b>{account.name}</b><span className="sub">{agent ? 'AI agent' : 'Rule bot'}, since {account.start_date}</span></span>
                       <span className="acct-num">
                         <b className="num">{m ? fmtMoney(m.end_equity) : '—'}</b>
-                        <span className={`num small ${m && m.total_return_pct > 0 ? 'pos' : m && m.total_return_pct < 0 ? 'neg' : ''}`}>{m ? fmtPct(m.total_return_pct) : ''}</span>
+                        <span className={`num small ${tone(m?.total_return_pct)}`}>{m ? fmtPct(m.total_return_pct) : ''}</span>
                       </span>
                       {view?.today.action && <span className={`call ${view.today.action.toLowerCase()}`}>{CALL[view.today.action]}</span>}
                     </a>
@@ -135,48 +165,64 @@ export function Overview({ portfolio, total }: {
         </section>
       </div>
 
-      <section className="panel" aria-labelledby="lb-h">
-        <div className="panel-head">
+      <section className="board" aria-labelledby="lb-h">
+        <div className="board-head">
           <div>
-            <h2 id="lb-h" className="panel-title">Rule bot leaderboard</h2>
-            <p className="field-note">Rule bots replayed on {stock || '…'}{dataset ? ` (${dataset.first_date} to ${dataset.last_date})` : ''}, with fees and slippage. Holding the stock returned {holdBH === undefined ? '…' : fmtPct(holdBH)}.</p>
+            <h2 id="lb-h" className="section-title">Top rule bots on {stock || '…'}</h2>
+            <p className="field-note">{dataset ? `${dataset.first_date} to ${dataset.last_date}, after fees. ` : ''}Just holding the stock: <b className={tone(holdBH)}>{holdBH === undefined ? '…' : fmtPct(holdBH)}</b></p>
           </div>
           {datasets.length > 1 && (
             <label className="inline-select">
-              <span>Prices</span>
+              <span>Stock</span>
               <select value={dataset?.id ?? ''} onChange={e => setDataset(datasets.find(d => d.id === e.target.value) ?? null)}>
                 {datasets.map(d => <option key={d.id} value={d.id}>{d.synthetic ? 'Sample stock (synthetic)' : (d.symbol ?? d.name)}</option>)}
               </select>
             </label>
           )}
         </div>
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr><th scope="col">#</th><th scope="col">Bot</th><th scope="col">Account value</th><th scope="col" className="r">Return</th>
-                <th scope="col" className="r">vs holding</th><th scope="col" className="r">Worst fall</th><th scope="col" className="r">Trades</th><th scope="col"><span className="visually-hidden">Action</span></th></tr>
-            </thead>
-            <tbody>
-              {board === null ? <tr><td colSpan={8} className="field-note">Running the bots…</td></tr> : board.map(({ bot, result }, i) => {
-                const m = result?.metrics
-                const vs = m ? m.total_return_pct - m.buy_hold_return_pct : null
-                return (
-                  <tr key={bot.id}>
-                    <td className="rank">{i + 1}</td>
-                    <td><b>{bot.title}</b><div className="sub clamp">Buys when {bot.describe?.entry}</div></td>
-                    <td><Spark values={result?.equity.map(e => e.equity) ?? []} label={`${bot.title} account value`} /></td>
-                    <td className={`r num ${m && m.total_return_pct > 0 ? 'pos' : m && m.total_return_pct < 0 ? 'neg' : ''}`}>{m ? fmtPct(m.total_return_pct) : '—'}</td>
-                    <td className={`r num ${vs !== null && vs > 0 ? 'pos' : vs !== null && vs < 0 ? 'neg' : ''}`}>{vs === null ? '—' : `${vs >= 0 ? '+' : ''}${vs.toFixed(1)} pts`}</td>
-                    <td className="r num">{m ? fmtPct(m.max_drawdown_pct) : '—'}</td>
-                    <td className="r num">{m?.trades ?? '—'}</td>
-                    <td className="r"><a className="btn sm" href={`#/test/${bot.id}`}>Test</a></td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-        <p className="fineprint">Past results on one stock. They do not predict future returns. Not investment advice.</p>
+        {board === null ? <p className="field-note">Running the bots…</p> : (
+          <>
+            {podium.length > 0 && (
+              <ol className="podium">
+                {podium.map(({ bot, result }, i) => {
+                  const m = result!.metrics
+                  const vs = m.total_return_pct - m.buy_hold_return_pct
+                  return (
+                    <li key={bot.id} className={`podium-card rank-${i + 1}`}>
+                      <a href={`#/test/${bot.id}`} aria-label={`Number ${i + 1}, ${bot.title}: ${fmtPct(m.total_return_pct)}. Test this bot`}>
+                        <span className="podium-top"><BotBadge id={bot.id} size="lg" /><span className="podium-rank">#{i + 1}</span></span>
+                        <span className="podium-name">{bot.title}</span>
+                        <span className={`podium-ret num ${tone(m.total_return_pct)}`}>{fmtPct(m.total_return_pct)}</span>
+                        <Spark values={result!.equity.map(e => e.equity)} width={240} height={40} label={`${bot.title} account value`} />
+                        <span className="podium-meta">
+                          <span className={tone(vs)}>{vs >= 0 ? '+' : ''}{vs.toFixed(1)} pts vs holding</span>
+                          <span>{m.trades} trades</span>
+                        </span>
+                      </a>
+                    </li>
+                  )
+                })}
+              </ol>
+            )}
+            {rest.length > 0 && (
+              <ul className="board-rest">
+                {rest.map(({ bot, result }) => {
+                  const m = result?.metrics
+                  return (
+                    <li key={bot.id}>
+                      <a href={`#/test/${bot.id}`}>
+                        <BotBadge id={bot.id} size="sm" />
+                        <b>{bot.title}</b>
+                        <span className={`num ${result?.trades.length ? tone(m?.total_return_pct) : 'muted'}`}>{!m ? '—' : result!.trades.length ? fmtPct(m.total_return_pct) : 'No trades'}</span>
+                      </a>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </>
+        )}
+        <p className="fineprint">Past results on one stock don't predict future returns. Not investment advice.</p>
       </section>
     </div>
   )
