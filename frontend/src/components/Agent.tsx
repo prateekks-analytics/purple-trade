@@ -7,6 +7,7 @@ import { DecisionLog, errText, JobProgress, useJob } from './AgentBits'
 import { ResultDetail, VerdictPanel } from './Results'
 import { AskSentence, DESK, DeskRow, POPULAR } from './Desk'
 import { IconSpark } from './Icons'
+import { markDone } from '../lib/quotes'
 
 /** The agent's pipeline, in order. `kinds` are the job-log kinds that mark a step as finished. */
 const STEPS = [
@@ -60,7 +61,7 @@ export function Agent({ health, initialSymbol, onPaperCreated }: { health: Healt
 
   useEffect(() => { api.saAgents().then(setAgents).catch(e => setErr(errText(e))) }, [])
 
-  const live = useJob(job, j => { if (j.status === 'done' && j.result) setCall(j.result); if (j.status === 'error') setErr(j.error) })
+  const live = useJob(job, j => { if (j.status === 'done' && j.result) { setCall(j.result); markDone('agent') } if (j.status === 'error') setErr(j.error) })
   const running = live?.status === 'running'
   const btLive = useJob(btJob, j => { if (j.status === 'done' && j.result) setBt(j.result); if (j.status === 'error') setErr(j.error) })
   const btRunning = btLive?.status === 'running'

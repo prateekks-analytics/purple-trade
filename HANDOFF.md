@@ -7,6 +7,18 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026)
 
+**Kite / Alpaca-style shell (16 Oct, early; frontend only; previous UI commit 140d63b)**
+- User benchmark: Zerodha Kite and Alpaca; wanted a hover-to-open sidebar instead of a fixed one.
+- Sidebar is a 72 px icon rail that opens over the page on hover or keyboard focus (content never shifts).
+- Top bar: live NIFTY 50 / SENSEX (`^NSEI`, `^BSESN`), Kite-style search box, paper money, NSE status, AI dot.
+- Ctrl+K or `/` opens `components/Palette.tsx`: type a stock → "Should I buy X?" (→ `#/agent/X`) or add it to the
+  watchlist; jump to pages, rule bots, paper accounts; switch theme; connect AI.
+- Home: `components/Watchlist.tsx` (localStorage `purple.watchlist`, default 8 NSE stocks; hover shows Ask / remove;
+  becomes a swipe row under 1100 px), greeting, hero, "Get started" checklist (AI connected, first agent call,
+  first backtest, a paper account; flags `purple.done.*`, hideable).
+- `lib/quotes.ts`: shared quote cache (60 s TTL, polls every 2 min, first load even in a hidden tab) = 10 Yahoo
+  calls per page load with the default list. TATAMOTORS has no Yahoo quote since the demerger (replaced by LT).
+
 **Consumer UI redesign (15 Oct, night; frontend only; restore point 65ee27b)**
 - User brief: less text, more inviting, "real paid app" feel; purple only as subtle streaks, not everywhere.
 - Look: neutral canvas (light #f4f5f7 / dark #0b0c0e), ink-black buttons, purple as streaks only (`--streak`

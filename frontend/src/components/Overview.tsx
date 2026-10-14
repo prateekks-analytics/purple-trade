@@ -8,15 +8,19 @@ import { Spark } from './Charts'
 import { isAgentAccount } from './Paper'
 import { AskSentence, BotBadge, DeskRow, POPULAR } from './Desk'
 import { IconSpark } from './Icons'
+import { Watchlist } from './Watchlist'
+import { isDone } from '../lib/quotes'
+import { openAiConnect } from '../lib/aiSettings'
 
 interface Board { bot: SuperAgentInfo; result: BacktestResult | null }
 
 const CALL = { BUY: 'Buy', SELL: 'Sell', HOLD: 'Hold' } as const
 
-export function Overview({ portfolio, total, onAsk }: {
+export function Overview({ portfolio, total, onAsk, aiReady }: {
   portfolio: Holding[] | null
   total: { value: number; start: number; change: number; changePct: number; day: number } | null
   onAsk: (symbol: string) => void
+  aiReady: boolean
 }) {
   const [dataset, setDataset] = useState<Dataset | null>(null)
   const [datasets, setDatasets] = useState<Dataset[]>([])
@@ -62,9 +66,16 @@ export function Overview({ portfolio, total, onAsk }: {
 
   return (
     <div className="page wide home">
-      <section className="hero" aria-labelledby="hero-h">
+      <div className="home-grid">
+      <Watchlist />
+      <div className="home-main">
+      <header className="greet">
+        <h1>{greeting()}</h1>
+        <p className="sub">{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+      </header>
+
+      <section className="hero" aria-label="Ask the AI agent about a stock">
         <div className="hero-copy">
-          <h1 id="hero-h" className="visually-hidden">Ask the AI agent about a stock</h1>
           <AskSentence value={ask} onChange={setAsk} onSubmit={() => ask && onAsk(ask)} id="hero-symbol" />
           <div className="chips hero-chips" role="group" aria-label="Popular stocks">
             {POPULAR.map(p => <button key={p} type="button" className={`chip ${ask === p ? 'on' : ''}`} onClick={() => setAsk(p)}>{p}</button>)}
@@ -79,6 +90,8 @@ export function Overview({ portfolio, total, onAsk }: {
           <p className="hero-desk-note">Six analysts check charts, news, trader chatter and financials, then argue it out.</p>
         </div>
       </section>
+
+      <Checklist aiReady={aiReady} hasPaper={Boolean(portfolio?.length)} />
 
       <div className="path-grid">
         <a className="path-card bots" href="#/test">
@@ -224,6 +237,49 @@ export function Overview({ portfolio, total, onAsk }: {
         )}
         <p className="fineprint">Past results on one stock don't predict future returns. Not investment advice.</p>
       </section>
+      </div>
+      </div>
     </div>
+  )
+}
+
+function greeting() {
+  const h = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', hour12: false }).format(new Date()))
+  return h < 5 ? 'Up late?' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
+}
+
+/** Alpaca-style first-run checklist, built from real state; hidden once done or dismissed. */
+function Checklist({ aiReady, hasPaper }: { aiReady: boolean; hasPaper: boolean }) {
+  const [, force] = useState(0)
+  const [hidden, setHidden] = useState(() => { try { return localStorage.getItem('purple.checklist.hidden') === '1' } catch { return false } })
+  useEffect(() => { const f = () => force(x => x + 1); window.addEventListener('purple:done', f); return () => window.removeEventListener('purple:done', f) }, [])
+  const steps = [
+    { id: 'ai', label: 'Connect a free AI', done: aiReady, act: <button className="btn sm" onClick={openAiConnect}>Connect</button> },
+    { id: 'agent', label: 'Get your first call', done: isDone('agent'), act: <a className="btn sm" href="#/agent">Ask</a> },
+    { id: 'test', label: 'Test a rule bot', done: isDone('test'), act: <a className="btn sm" href="#/test">Test</a> },
+    { id: 'paper', label: 'Start a paper account', done: hasPaper, act: <a className="btn sm" href="#/paper">Open</a> },
+  ]
+  const n = steps.filter(x => x.done).length
+  if (hidden || n === steps.length) return null
+  return (
+    <section className="checklist panel" aria-labelledby="ck-h">
+      <div className="ck-head">
+        <div>
+          <h2 id="ck-h" className="panel-title">Get started</h2>
+          <p className="sub">{n} of {steps.length} done</p>
+        </div>
+        <button className="link-btn muted" onClick={() => { setHidden(true); try { localStorage.setItem('purple.checklist.hidden', '1') } catch { /* ignore */ } }}>Hide</button>
+      </div>
+      <div className="ck-bar" role="progressbar" aria-valuemin={0} aria-valuemax={steps.length} aria-valuenow={n} aria-label="Getting started progress"><i style={{ width: `${(n / steps.length) * 100}%` }} /></div>
+      <ol className="ck-steps">
+        {steps.map(x => (
+          <li key={x.id} className={x.done ? 'done' : ''}>
+            <span className="ck-tick" aria-hidden="true">{x.done ? '✓' : ''}</span>
+            <span className="ck-label">{x.label}{x.done && <span className="visually-hidden"> (done)</span>}</span>
+            {!x.done && x.act}
+          </li>
+        ))}
+      </ol>
+    </section>
   )
 }

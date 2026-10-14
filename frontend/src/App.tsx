@@ -6,6 +6,8 @@ import { AiConnect } from './components/AiConnect'
 import { Build } from './components/Build'
 import { IconBuild, IconMoon, IconOverview, IconPaper, IconSpark, IconSun, IconTest, Logo } from './components/Icons'
 import { Overview } from './components/Overview'
+import { Palette } from './components/Palette'
+import { useQuotes } from './lib/quotes'
 import { Paper } from './components/Paper'
 import { TestBot } from './components/TestBot'
 import { Workspace } from './components/Workspace'
@@ -36,6 +38,8 @@ function parseRoute(): Route {
   return { page: 'overview' }
 }
 
+const INDICES = [{ sym: '^NSEI', label: 'NIFTY 50' }, { sym: '^BSESN', label: 'SENSEX' }]
+
 const SECTIONS = [
   { page: 'overview', hash: '#/', label: 'Home', short: 'Home', icon: <IconOverview />, group: '' },
   { page: 'agent', hash: '#/agent', label: 'Ask the agent', short: 'Agent', icon: <IconSpark />, group: 'AI agent' },
@@ -58,6 +62,8 @@ export default function App() {
   const [aiVersion, setAiVersion] = useState(0)
   const [theme, setTheme] = useState(initialTheme)
   const [tick, setTick] = useState(0)
+  const [palette, setPalette] = useState(false)
+  const idx = useQuotes(INDICES.map(i => i.sym))
   const portfolio = usePortfolio(`${route.page}-${tick}`)
   const sum = totals(portfolio)
   const market = nseStatus()
@@ -66,6 +72,15 @@ export default function App() {
     document.documentElement.dataset.theme = theme
     try { localStorage.setItem('purple.theme', theme) } catch { /* ignore */ }
   }, [theme])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement)?.tagName ?? '')
+      if ((e.key === 'k' && (e.ctrlKey || e.metaKey)) || (e.key === '/' && !typing)) { e.preventDefault(); setPalette(true) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   useEffect(() => {
     const onHash = () => { setRoute(parseRoute()); scrollTo(0, 0) }
@@ -142,6 +157,23 @@ export default function App() {
       <div className="main-col">
         <header className="bar">
           <a className="bar-brand" href="#/" aria-label="Purple Trade home"><Logo size={26} /><span>Purple Trade</span></a>
+          <div className="indices" aria-label="Market indices">
+            {INDICES.map(i => {
+              const q = idx[i.sym]
+              const c = q?.change_pct
+              return (
+                <span key={i.sym} className="index">
+                  <span className="index-name">{i.label}</span>
+                  <b className="num">{q ? q.price.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '—'}</b>
+                  {c != null && <span className={`num ${c > 0 ? 'pos' : c < 0 ? 'neg' : ''}`}>{c > 0 ? '+' : ''}{c.toFixed(2)}%</span>}
+                </span>
+              )
+            })}
+          </div>
+          <button className="search-btn" onClick={() => setPalette(true)} aria-label="Search stocks, bots and pages (Ctrl+K)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+            <span>Search eg: infy, golden cross</span><kbd>Ctrl K</kbd>
+          </button>
           <a className="wallet" href="#/paper" title="All paper accounts together">
             <span className="wallet-label">Paper money</span>
             <b className="num">{sum ? fmtMoney(sum.value) : '—'}</b>
@@ -156,6 +188,7 @@ export default function App() {
             <IconSpark />
           </button>
         </header>
+        <Palette open={palette} onClose={() => setPalette(false)} onTheme={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))} onConnectAi={() => setAiOpen(true)} />
         <AiConnect key={aiOpen ? 'open' : 'closed'} open={aiOpen} hosted={Boolean(health?.hosted)} onClose={() => setAiOpen(false)} />
         {health?.hosted && (
           <p className="hosted-note">Shared online demo: strategies and paper accounts saved here are visible to other visitors and are wiped when the server restarts. For private use, download the Windows app.</p>
@@ -175,7 +208,7 @@ export default function App() {
             <TestBot key={`${route.bot ?? 'none'}-${aiVersion}`} initialBot={route.bot}
               onPaperCreated={id => go(`#/paper/${id}`)} onBuild={() => go('#/build')} />
           ) : (
-            <Overview portfolio={portfolio} total={sum} onAsk={sym => go(`#/agent/${sym}`)} />
+            <Overview portfolio={portfolio} total={sum} onAsk={sym => go(`#/agent/${sym}`)} aiReady={Boolean(health?.ai.available)} />
           )}
         </main>
       </div>

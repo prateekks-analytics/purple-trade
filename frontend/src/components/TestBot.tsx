@@ -7,6 +7,7 @@ import { Assumptions, DataPicker, ResultDetail, VerdictPanel } from './Results'
 import { CandleChart, RangeTabs, sliceRange, type Bar as PriceBar, type RangeKey } from './Charts'
 import { isLive } from '../lib/portfolio'
 import { BotBadge } from './Desk'
+import { markDone } from '../lib/quotes'
 import { IconPlay, IconPlus, IconSpark } from './Icons'
 
 /** One row in the bot chooser: a built-in rule bot or a saved version of the person's own bot. */
@@ -84,7 +85,7 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
     setResult(null); setErr(null); setBusy(true)
     try {
       const r = await api.saRun(bot.id, datasetId, 5, [])
-      if (r.kind === 'rules') setResult(r.result)
+      if (r.kind === 'rules') { setResult(r.result); markDone('test') }
     } catch (e) { setErr(errText(e)) } finally { setBusy(false) }
   }
 
