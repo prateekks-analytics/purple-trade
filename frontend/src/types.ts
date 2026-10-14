@@ -146,7 +146,7 @@ export interface TaEngine {
 
 export interface SuperAgentInfo {
   id: string
-  kind: 'ai-team' | 'ta-original' | 'ai-news' | 'ai-crew' | 'rules' | 'research'
+  kind: 'ai-agent' | 'ai-team' | 'ta-original' | 'ai-news' | 'ai-crew' | 'rules' | 'research'
   title: string
   tagline: string
   source: { name: string; url: string }
@@ -157,6 +157,7 @@ export interface SuperAgentInfo {
   engines?: TaEngine[]
   strategy?: Strategy
   describe?: NonNullable<Review['describe']>
+  hidden?: boolean
 }
 
 export interface TeamDecision {
@@ -170,6 +171,21 @@ export interface TeamDecision {
   bear: string
   notes: string[]
   report: string
+  /** Purple Research Agent only */
+  view?: 'BUY' | 'SELL' | 'HOLD'
+  risks?: string
+  steps?: { market?: string; news?: string; social?: string; tone?: string; items?: number; fundamentals?: string; health?: string }
+  risk_plan?: RiskPlan | null
+}
+
+export interface RiskPlan { close: number; atr: number; stop: number; target: number; stop_pct: number; target_pct: number }
+
+/** One Buy / Hold / Sell call on the latest completed session. */
+export interface AgentCall {
+  agent: { id: string; title: string; kind: SuperAgentInfo['kind'] }
+  symbol: string; name: string; date: string; close: number; holding: boolean; analyses: string[]
+  quote: Quote | null; model: string; cached: boolean
+  decision: Omit<TeamDecision, 'date' | 'close'>
 }
 
 export type TeamResult = BacktestResult & { decisions: TeamDecision[] }
@@ -208,7 +224,7 @@ export interface PaperView {
 }
 
 export interface Quote {
-  ticker: string; currency: string | null; price: number; prev_close: number | null; change_pct: number | null
+  ticker: string; name?: string | null; currency: string | null; price: number; prev_close: number | null; change_pct: number | null
   time: string | null; session_open: boolean; source: string
 }
 

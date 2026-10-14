@@ -1,5 +1,5 @@
 import type {
-  AgentImport, AiProvider, MarketStatus, Quote, BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, Review, RunResponse, Strategy,
+  AgentCall, AgentImport, AiProvider, MarketStatus, Quote, BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, Review, RunResponse, Strategy,
   StrategyDoc, StrategySummary, SuperAgentInfo, Template,
 } from './types'
 import { aiHeaders } from './lib/aiSettings'
@@ -80,6 +80,8 @@ export const api = {
   saAgents: () => req<SuperAgentInfo[]>('/api/superagent/agents'),
   saRun: (agent_id: string, dataset_id: string | null, days: number, analyses: string[], symbol?: string, engine = 'local', confirm_paid = false) =>
     req<RunResponse>('/api/superagent/run', json('POST', { agent_id, dataset_id, days, analyses, symbol, engine, confirm_paid })),
+  agentCall: (body: { agent_id: string; symbol: string; analyses: string[]; holding: boolean; fresh?: boolean; engine?: string; confirm_paid?: boolean }) =>
+    req<{ kind: 'job'; job: Job<AgentCall> }>('/api/agent/call', json('POST', body)),
   saJob: <R,>(id: string) => req<Job<R>>(`/api/superagent/jobs/${id}`),
   saPaperList: () => req<PaperAccount[]>('/api/superagent/paper'),
   saPaperCreate: (agent_id: string, dataset_id: string | null, capital: number, analyses: string[], symbol?: string, interval = '1d') =>

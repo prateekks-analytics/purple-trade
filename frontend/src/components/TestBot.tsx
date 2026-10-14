@@ -77,6 +77,7 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
       if (!alive) return
       const out: Bot[] = []
       for (const a of agents) {
+        if (a.hidden || (a.kind as string) !== 'rules') continue
         if (a.kind === 'ta-original' && a.available) {
           out.push({ id: a.id, group: 'ai', title: a.title, blurb: 'The original open-source TradingAgents framework: market, news, sentiment and fundamentals analysts, a bull and bear debate, then trader, risk and portfolio managers.',
             speed: 'About 10 minutes per trading day', costs: TA_COSTS, capital: 100000, sizePct: 100, info: a })
@@ -172,8 +173,8 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
     <div className="page wide">
       <header className="page-head row">
         <div>
-          <h1>Test a bot</h1>
-          <p className="lede">Choose a bot, set up the test on the right, run it, and read what the result means.</p>
+          <h1>Test a rule bot</h1>
+          <p className="lede">A rule bot follows fixed indicator rules: same prices, same trades, no AI. Pick one, run it on past prices, then follow it in a paper account. Want an AI opinion on a stock instead? <a href="#/agent">Ask the AI agent</a>.</p>
         </div>
       </header>
 

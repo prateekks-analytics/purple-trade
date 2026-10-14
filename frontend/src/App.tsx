@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import type { Health, Proposal } from './types'
+import { Agent } from './components/Agent'
 import { AiConnect } from './components/AiConnect'
 import { Build } from './components/Build'
 import { IconBuild, IconMoon, IconOverview, IconPaper, IconSpark, IconSun, IconTest, Logo } from './components/Icons'
@@ -14,6 +15,7 @@ import { fmtMoney, fmtPct } from './lib/tree'
 
 type Route =
   | { page: 'overview' }
+  | { page: 'agent' }
   | { page: 'test'; bot?: string }
   | { page: 'build' }
   | { page: 'strategy'; id: string }
@@ -24,6 +26,7 @@ function parseRoute(): Route {
   let m = h.match(/^#\/s\/([\w-]+)/)
   if (m) return { page: 'strategy', id: m[1] }
   if (h.startsWith('#/build')) return { page: 'build' }
+  if (h.startsWith('#/agent') || /^#\/test\/(purple-agent|tradingagents|news-pulse|crew-nse)/.test(h)) return { page: 'agent' }
   m = h.match(/^#\/paper(?:\/([\w-]+))?/)
   if (m) return { page: 'paper', id: m[1] }
   m = h.match(/^#\/test(?:\/([\w:-]+))?/)
@@ -32,10 +35,11 @@ function parseRoute(): Route {
 }
 
 const SECTIONS = [
-  { page: 'overview', hash: '#/', label: 'Overview', icon: <IconOverview /> },
-  { page: 'test', hash: '#/test', label: 'Test a bot', icon: <IconTest /> },
-  { page: 'build', hash: '#/build', label: 'Build your own', icon: <IconBuild /> },
-  { page: 'paper', hash: '#/paper', label: 'Paper accounts', icon: <IconPaper /> },
+  { page: 'overview', hash: '#/', label: 'Overview', icon: <IconOverview />, group: '' },
+  { page: 'agent', hash: '#/agent', label: 'Ask the agent', icon: <IconSpark />, group: 'AI agent' },
+  { page: 'test', hash: '#/test', label: 'Test a bot', icon: <IconTest />, group: 'Rule bots' },
+  { page: 'build', hash: '#/build', label: 'Build a bot', icon: <IconBuild />, group: '' },
+  { page: 'paper', hash: '#/paper', label: 'Paper accounts', icon: <IconPaper />, group: 'Practice' },
 ] as const
 
 function initialTheme(): 'light' | 'dark' {
@@ -103,11 +107,12 @@ export default function App() {
       <aside className="sidebar" aria-label="Main navigation">
         <a className="brand" href="#/" aria-label="Purple Trade overview"><Logo /><span>Purple Trade</span></a>
         <nav className="side-nav">
-          {SECTIONS.map(s => (
+          {SECTIONS.map(s => [
+            s.group && <span key={`g-${s.page}`} className="side-group">{s.group}</span>,
             <a key={s.page} href={s.hash} className={section === s.page ? 'on' : ''} aria-current={section === s.page ? 'page' : undefined}>
               {s.icon}<span>{s.label}</span>
-            </a>
-          ))}
+            </a>,
+          ])}
         </nav>
         <div className="side-foot">
           <button className={`side-ai ${health?.ai.available ? 'on' : 'off'}`} onClick={() => setAiOpen(true)} title={health?.ai.detail}>
@@ -152,6 +157,8 @@ export default function App() {
             <Workspace key={`${route.id}-${aiVersion}`} id={route.id} initialIdea={idea} initialProposal={imported} health={health}
               onBack={() => { setIdea(undefined); setImported(undefined); go('#/build') }} onRenamed={() => {}}
               onTest={vid => go(`#/test/version:${vid}`)} />
+          ) : route.page === 'agent' ? (
+            <Agent key={aiVersion} health={health} onPaperCreated={id => go(`#/paper/${id}`)} />
           ) : route.page === 'build' ? (
             <Build key={aiVersion} health={health} onOpen={open} onTest={bot => go(`#/test/${bot}`)} />
           ) : route.page === 'paper' ? (
