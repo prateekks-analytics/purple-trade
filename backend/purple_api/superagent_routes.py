@@ -17,7 +17,7 @@ from .store import Store
 AI_KINDS = ("ai-team", "ta-original", *sa.NEWS_KINDS)
 SYMBOL_KINDS = ("ta-original", *sa.NEWS_KINDS)  # agents that need a real NSE symbol (their data comes from the web)
 # bar sizes a paper account can follow, per agent kind (AI agents decide at most every 15 minutes: API limits)
-INTERVALS = {"rules": ("1d", "5m", "15m", "30m"), "ai-news": ("1d", "15m", "30m"), "ai-crew": ("1d", "30m"),
+INTERVALS = {"rules": ("1d", "5m", "15m", "30m"), "ai-agent": ("1d",), "ai-news": ("1d", "15m", "30m"), "ai-crew": ("1d", "30m"),
              "ai-team": ("1d",), "ta-original": ("1d",)}
 FREE_BACKGROUND_AI = ("gemini", "ollama")  # the live loop only calls the server's own free AI, never a browser key
 
@@ -30,6 +30,17 @@ class RunIn(BaseModel):
     analyses: list[str] = ["market"]
     engine: str = "local"  # original TradingAgents only: which AI runs it (see superagent.TA_ENGINES)
     confirm_paid: bool = False  # must be true for a paid engine: the user saw the cost estimate and approved it
+
+
+class CallIn(BaseModel):
+    """Ask an agent for its call on one stock now (the latest completed session)."""
+    agent_id: str = "purple-agent"
+    symbol: str = Field(..., min_length=1, max_length=30)
+    analyses: list[str] = ["market", "news", "social", "fundamentals"]
+    holding: bool = False  # does the person already own the stock?
+    fresh: bool = False  # ignore a cached call for the same session
+    engine: str | None = None  # original TradingAgents only
+    confirm_paid: bool = False
 
 
 class PricesIn(BaseModel):
@@ -184,10 +195,12 @@ def register(app: FastAPI, db: Store):
         return e
 
     def decider(a: dict, bars, symbol: str, analyses: list[str], engine: dict | None = None, keys: dict | None = None,
-                ai=None):
+                ai=None, extra: str = ""):
         if a["kind"] in sa.NEWS_KINDS:
             def complete(system, user):
                 return ai.complete(system, [{"role": "user", "content": user}])
+            if a["kind"] == "ai-agent":
+                return live_agents.agent_decider(bars, symbol, company(symbol), analyses, complete, extra=extra)
             make = live_agents.pulse_decider if a["kind"] == "ai-news" else live_agents.crew_decider
             return make(bars, symbol, company(symbol), analyses, complete)
         if a["kind"] == "ta-original":
@@ -263,6 +276,56 @@ def register(app: FastAPI, db: Store):
             return res
 
         return {"kind": "job", "job": jobs.start(work, missing)}
+
+    @app.post("/api/agent/call")
+    def agent_call(body: CallIn, request: Request):
+        """One Buy / Hold / Sell call on the latest completed session, as a background job (the pipeline is logged
+        step by step). Calls are cached per agent, AI, analysts, session and position unless `fresh` is set."""
+        keys = browser_keys(request)
+        a = agent(body.agent_id)
+        if a["kind"] not in ("ai-agent", "ta-original"):
+            raise HTTPException(400, "Only AI agents give a call. Rule bots are tested under Rule bots.")
+        analyses = check_analyses(a, body.analyses)
+        engine = ai = None
+        if a["kind"] == "ta-original":
+            engine = ta_engine_or_error(body.engine, body.confirm_paid, keys) if body.engine else default_ta_engine(keys)
+            model = f"{engine['id']}:{engine.get('quick')}"
+        else:
+            ai = ai_or_503(ai_for(request))
+            model = f"{ai.name}:{ai.model}"
+        meta = store_prices(body.symbol)
+        bars = db.get_bars(meta["id"]) or []
+        if len(bars) < 30:
+            raise HTTPException(409, f"Not enough price history for {meta['symbol']}.")
+        symbol, t = meta["symbol"], len(bars) - 1
+        quote, extra = None, ""
+        try:
+            quote = market.quote(symbol)
+            if quote.get("time") and quote["time"][:10] > bars[t].date:
+                extra = (f"- Live price now (delayed about 15 min, session not finished): {quote['price']:,.2f} "
+                         f"({(quote['price'] / bars[t].close - 1) * 100:+.2f}% vs this close).")
+        except market.MarketError:
+            pass
+        key = f"call:{a['id']}:{model}:{','.join(analyses)}:{meta['id']}:{'holding' if body.holding else 'flat'}"
+        cached = {} if body.fresh else db.get_decisions(key)
+        base = {"agent": {"id": a["id"], "title": a["title"], "kind": a["kind"]}, "symbol": symbol,
+                "name": company(symbol), "date": bars[t].date, "close": bars[t].close, "holding": body.holding,
+                "analyses": analyses, "quote": quote, "model": model}
+
+        if bars[t].date in cached:
+            j = jobs.start(lambda log, progress: {**base, "decision": cached[bars[t].date], "cached": True}, 0)
+            return {"kind": "job", "job": j}
+        decide = decider(a, bars, symbol, analyses, engine, keys, ai, extra=extra)
+
+        def work(log, progress):
+            d = decide(t, body.holding, lambda k, x: log(k, x, bars[t].date))
+            for n in d.get("notes", []):
+                log("note", n, bars[t].date)
+            db.save_decision(key, bars[t].date, d)
+            progress()
+            return {**base, "decision": d, "cached": False}
+
+        return {"kind": "job", "job": jobs.start(work, 1)}
 
     @app.get("/api/superagent/jobs/{jid}")
     def job(jid: str):

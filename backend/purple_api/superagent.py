@@ -87,12 +87,23 @@ NEWS_SOURCES = [
      "detail": "r/IndianStreetBets and r/IndianStockMarket; recent posts only."},
     {"id": "yahoo", "label": "Yahoo Finance headlines", "available": True, "detail": "Often empty for NSE stocks."},
 ]
-NEWS_KINDS = ("ai-news", "ai-crew")
+NEWS_KINDS = ("ai-agent", "ai-news", "ai-crew")  # agents that read the web (news, filings) and use the connected AI
 
 
 def catalog() -> list[dict]:
+    """Agents (AI, reason over data) and bots (fixed rules). `hidden` entries still run (old accounts, tests) but the
+    UI does not offer them: the Purple Research Agent covers what they did."""
+    from .live_agents import AGENT_ANALYSTS
     installed = ta_installed()
     out = [{
+        "id": "purple-agent", "kind": "ai-agent", "title": "Purple Research Agent",
+        "tagline": "Reads prices, news, trader posts and the company's financials, argues the bull and bear case, "
+                   "and a risk manager makes the Buy / Hold / Sell call with a stop-loss and target.",
+        "source": {"name": "Workflow modelled on TradingAgents (Tauric Research); Purple's own code", "url": TA_URL},
+        "fidelity": "Up to 5 AI calls per decision on the AI you connect. Indicators, stop-loss and target are computed "
+                    "by code; headlines and annual figures are filtered by date, so a backtest never sees later data.",
+        "analyses": AGENT_ANALYSTS, "available": True, "speed": "about 20-60 s per decision",
+    }, {
         "id": "tradingagents-original", "kind": "ta-original", "title": "TradingAgents (original)",
         "tagline": "The real multi-agent framework: market, news, sentiment and fundamentals analysts → bull vs bear "
                    "debate → trader → risk debate → portfolio manager. Real NSE data from Yahoo Finance.",
@@ -108,7 +119,7 @@ def catalog() -> list[dict]:
         "source": {"name": "TradingAgents by Tauric Research (Apache-2.0)", "url": TA_URL},
         "fidelity": "Purple's re-implementation of the TradingAgents workflow running on your local AI. "
                     "Not the original code: only the market analyst is available until news/fundamentals data is connected.",
-        "analyses": ANALYSES, "available": True, "speed": "about 30-60 s per trading day on local Qwen",
+        "analyses": ANALYSES, "available": True, "speed": "about 30-60 s per trading day on local Qwen", "hidden": True,
     }]
     for bid, b in RULE_BOTS.items():
         out.append({"id": bid, "kind": "rules", "title": b["title"], "tagline": b["tagline"],
@@ -121,7 +132,7 @@ def catalog() -> list[dict]:
         "source": {"name": "Purple Trade (Google News, Reddit, Yahoo Finance feeds)", "url": ""},
         "fidelity": "One AI call per decision on the AI you connect. Headlines are filtered by publish time, so a "
                     "backtest never sees later news. Reddit and Yahoo only have recent posts; older days use Google News.",
-        "analyses": NEWS_SOURCES, "available": True, "speed": "about 5-20 s per decision",
+        "analyses": NEWS_SOURCES, "available": True, "speed": "about 5-20 s per decision", "hidden": True,
     })
     out.append({
         "id": "crew-nse", "kind": "ai-crew", "title": "Stock Analysis Crew (NSE)",
@@ -129,7 +140,7 @@ def catalog() -> list[dict]:
         "source": {"name": "crewAI-examples stock_analysis (Prof. Harnal's link), adapted for NSE", "url": CREW_URL},
         "fidelity": "Purple's re-implementation of the crew's three roles, not crewAI's code. SEC filings are replaced "
                     "by Yahoo Finance annual figures and web search by news feeds. Three AI calls per decision.",
-        "analyses": NEWS_SOURCES, "available": True, "speed": "about 15-60 s per decision",
+        "analyses": NEWS_SOURCES, "available": True, "speed": "about 15-60 s per decision", "hidden": True,
     })
     return out
 

@@ -57,7 +57,9 @@ def test_catalog_rule_bots_are_valid():
         st = sa.rule_strategy(bid)
         assert st is not None and st.questions == []
     ids = [a["id"] for a in sa.catalog()]
-    assert ids[:2] == ["tradingagents-original", "tradingagents"] and {"news-pulse", "crew-nse"} <= set(ids)
+    assert ids[:3] == ["purple-agent", "tradingagents-original", "tradingagents"] and {"news-pulse", "crew-nse"} <= set(ids)
+    shown = [a["id"] for a in sa.catalog() if not a.get("hidden")]
+    assert shown[:2] == ["purple-agent", "tradingagents-original"] and "news-pulse" not in shown
 
 
 def test_rule_bot_runs_on_sample(setup):

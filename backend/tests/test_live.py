@@ -179,3 +179,63 @@ def test_rate_limit_pauses_yahoo_and_shows_in_status(monkeypatch):
     c = TestClient(create_app(store=Store(":memory:"), provider=TeamProvider()))
     assert c.get("/api/market/status").json()["rate_limited"]
     market._state["paused_until"] = 0.0
+
+
+# ---------- Purple Research Agent ----------
+
+def test_research_agent_runs_every_step_once_per_decision(live):
+    feed, seen = live
+    p = TeamProvider(actions=("BUY",))
+    c = TestClient(create_app(store=Store(":memory:"), provider=p))
+    r = c.post("/api/superagent/run", json={"agent_id": "purple-agent", "symbol": "INFY", "days": 2,
+                                             "analyses": ["market", "news", "social", "fundamentals"]})
+    assert r.status_code == 200, r.text
+    j = wait(c, r.json()["job"]["id"])
+    assert j["status"] == "done", j["error"]
+    assert p.calls == 10  # news & social, fundamentals, bull, bear, risk manager per day
+    assert {"analyst", "news", "research", "financial", "bull", "bear", "manager"} <= {l["kind"] for l in j["log"]}
+    assert seen[0][2] == ("google", "yahoo", "reddit")
+    d = j["result"]["decisions"][0]
+    assert d["steps"]["market"].startswith("Market report") and d["risk_plan"]["stop"] < d["risk_plan"]["close"]
+
+
+def test_research_agent_skips_switched_off_analysts(live):
+    _, seen = live
+    p = TeamProvider(actions=("HOLD",))
+    c = TestClient(create_app(store=Store(":memory:"), provider=p))
+    r = c.post("/api/superagent/run", json={"agent_id": "purple-agent", "symbol": "INFY", "days": 1, "analyses": ["market"]})
+    j = wait(c, r.json()["job"]["id"])
+    assert j["status"] == "done", j["error"]
+    assert p.calls == 3 and seen == []  # bull, bear, risk manager only; no news fetched
+
+
+def test_call_now_gives_one_decision_and_caches_it(live):
+    feed, _ = live
+    p = TeamProvider(actions=("BUY",))
+    c = TestClient(create_app(store=Store(":memory:"), provider=p))
+    body = {"symbol": "INFY", "analyses": ["market", "news"], "holding": False}
+    j = wait(c, c.post("/api/agent/call", json=body).json()["job"]["id"])
+    assert j["status"] == "done", j["error"]
+    res = j["result"]
+    assert res["date"] == feed["daily"][-1].date and res["decision"]["action"] == "BUY" and not res["cached"]
+    assert res["agent"]["id"] == "purple-agent" and p.calls == 4
+    again = wait(c, c.post("/api/agent/call", json=body).json()["job"]["id"])
+    assert again["result"]["cached"] and p.calls == 4
+    fresh = wait(c, c.post("/api/agent/call", json={**body, "fresh": True}).json()["job"]["id"])
+    assert not fresh["result"]["cached"] and p.calls == 8
+
+
+def test_call_is_for_agents_only(live):
+    c = TestClient(create_app(store=Store(":memory:"), provider=TeamProvider()))
+    r = c.post("/api/agent/call", json={"agent_id": "ta-golden-cross", "symbol": "INFY"})
+    assert r.status_code == 400
+
+
+def test_research_agent_paper_account_is_daily_only(live):
+    c = TestClient(create_app(store=Store(":memory:"), provider=TeamProvider()))
+    r = c.post("/api/superagent/paper", json={"agent_id": "purple-agent", "symbol": "INFY", "interval": "30m",
+                                               "analyses": ["market"]})
+    assert r.status_code == 422
+    r = c.post("/api/superagent/paper", json={"agent_id": "purple-agent", "symbol": "INFY", "analyses": ["market", "news"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["agent"]["kind"] == "ai-agent"
