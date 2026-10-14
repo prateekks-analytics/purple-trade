@@ -1,10 +1,65 @@
-# Purple Trade — new-chat handoff (updated 9 October 2026)
+# Purple Trade — new-chat handoff (updated 15 October 2026)
 
-**START HERE: the redesign is DONE (9 Oct 2026). Read "Redesign — done" below; the older sections describe the pre-redesign UI.**
+**START HERE: section "Current state (15 Oct 2026)" is authoritative. Everything below it is history.**
 
-Read this first, then `purple/README.md` (architecture, engine contract, SuperAgent, endpoints, commands).
-Root `CLAUDE.md` section 1 describes the OLD root app — superseded; do not extend or reuse it.
-Leave the TCS/Infosys RAG files untouched.
+Read this first, then `purple/README.md`. Root `CLAUDE.md` section 1 describes the OLD root app — superseded; do not
+extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CIS repo).
+
+## Current state (15 Oct 2026)
+
+**Live and shared**
+- Web demo: https://purple-trade.onrender.com (Render free plan, auto-deploys on push to GitHub `main`; sleeps when
+  idle, ~1 min wake, data wiped on restart; shared-demo banner shown via `PURPLE_HOSTED=1` in `Dockerfile`).
+- Public repo: https://github.com/prateekks-analytics/purple-trade — contains ONLY `purple/`. Publish with:
+  `git subtree split --prefix=purple -b purple-public` then `git push https://github.com/prateekks-analytics/purple-trade.git purple-public:main`.
+  Scan for keys before every push. Commit author email (prateeksinghamu@gmail.com) is public in history.
+- Windows app: release v1.1.0, stable link
+  https://github.com/prateekks-analytics/purple-trade/releases/latest/download/PurpleTrade-windows.zip
+  (`build_exe.ps1` → `dist_exe/PurpleTrade.exe`; PyInstaller in backend/.venv; zip staged in
+  `C:\Users\prate\Claude\purple-trade-release\`). v1.1.0 lacks only the tiny padding fix 43c5152.
+- User approved pushing and releasing for this project (12 Oct). Auto-commit is on (local); push only when asked.
+
+**UI (trading-desk redesign, commits ff4c7f5 → 43c5152)**
+- Shell: deep purple sidebar (Overview, Test a bot, Build your own, Paper accounts), top account bar (paper equity,
+  total P&L, accounts, NSE open/closed by IST clock, holidays not checked), light/dark toggle (`purple.theme`).
+  Fonts: Plus Jakarta Sans + IBM Plex Mono (axes only). Purple must remain the brand colour (user, 10 Oct).
+- Overview (`#/`): combined paper-equity chart, accounts with sparklines, rule-bot leaderboard (never-traded last).
+- Test a bot (`#/test[/<botId>]`): bot list | candlestick chart + verdict | "Backtest ticket" with run and
+  "Start paper account". Saved strategies run as `version:<vid>`.
+- Paper accounts (`#/paper[/<id>]`): account list | account bar + chart + logbook | "Today" call and Next day.
+- Charts: `components/Charts.tsx` (CandleChart with volume/OHLC/markers, RangeTabs, Spark), `LineChart.tsx` (area).
+  Palette validated: light #5b3fe0/#e8692e, dark #8c78ff/#e0702f.
+- Verdict text (`lib/verdict.ts`) is computed from numbers only.
+
+**AI (in-app keys)**
+- "Connect an AI" dialog (`components/AiConnect.tsx`): Gemini, Groq, OpenRouter, OpenAI, Anthropic, Ollama (hidden
+  when hosted). Key stays in the browser (`purple.ai` localStorage) and is sent as X-AI-Provider/Model/Key headers per
+  request; server never stores it. Asked once per session when no AI is available.
+- Backend: `ai/providers.py` (GeminiProvider with retry + fallback chain, OpenAICompatProvider, AnthropicProvider,
+  `make_provider`, `CATALOG`), `/api/ai/providers`, `/api/ai/test` (lists models, no cost). Browser keys also reach
+  TradingAgents runs. Local `.env` (git-ignored) still supported; `.env.example` documents it.
+- Free-tier Gemini is often overloaded (503); the fallback handles most cases.
+
+**Backend changes since 9 Oct**: saved versions as rule bots (15e564f); SQLite race fix (6b61d78); Gemini + multi-
+provider (e7f17fd); `launcher.py` + `PURPLE_DIST` for the exe; hosted flag in `/api/health`. Tests: **62 passing**
+(`cd purple\backend && .venv\Scripts\python.exe -m pytest -q`).
+
+**Dev**: `.claude/launch.json` → `purple-api` (8780) + `purple-web` (5173, open http://localhost:5173). Restart the
+API after backend edits. Visual checks used headless Edge over CDP (`shot.mjs` lived in the session scratchpad, not
+the repo) because the in-app browser pane does not render while the window is minimised.
+
+**Not done / open**
+- Full TradingAgents run through the new UI (~10–20 min; ask first). TradingAgents is not in the exe or the web demo.
+- Docker image never built locally (Docker Desktop off); Render build succeeded, which is the real check.
+- Screen-reader (NVDA) test, 200% zoom check.
+- Test data in the local DB: paper account "MACD Momentum · SAMPLE"; strategies "Gemini check: RSI 30/70",
+  "Header check: EMA cross" (x2).
+- Ideas not started: candlesticks for real-symbol paper accounts, per-visitor workspaces on the hosted demo,
+  code-signing the exe (SmartScreen warning).
+
+---
+
+## History (pre-15 Oct)
 
 ## What exists
 
