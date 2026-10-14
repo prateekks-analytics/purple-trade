@@ -1,4 +1,4 @@
-# Purple Trade — new-chat handoff (updated 15 October 2026)
+# Purple Trade — new-chat handoff (updated 15 October 2026, evening: live data + news agents)
 
 **START HERE: section "Current state (15 Oct 2026)" is authoritative. Everything below it is history.**
 
@@ -83,6 +83,12 @@ the repo) because the in-app browser pane does not render while the window is mi
 - Tests: **76 passing** (`tests/test_live.py` added; two catalog tests updated because the crew is now runnable).
 
 **Not done / open**
+- NOT PUSHED: commits 3662d46, edb2f3b, e774f9d (live prices, intraday, news agents) are local only. Push when the
+  user asks (subtree split, see top); then check Render can reach Yahoo/Google News/Reddit (UNVERIFIED).
+- Intraday bar-by-bar movement not yet seen live (built while NSE was closed): check during 09:15–15:30 IST that the
+  5m account advances and `/api/market/status` shows `bars_saved` rising and no errors.
+- Exe (v1.1.0) predates all of the above; rebuild/release only when the user asks.
+- Live-trading idea parked: real-time broker feed (Upstox / Angel One / Kite) needs the user's own account + key.
 - Full TradingAgents run through the new UI (~10–20 min; ask first). TradingAgents is not in the exe or the web demo.
 - Docker image never built locally (Docker Desktop off); Render build succeeded, which is the real check.
 - Screen-reader (NVDA) test, 200% zoom check.
