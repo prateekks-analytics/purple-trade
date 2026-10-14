@@ -224,7 +224,7 @@ def _metrics(s: Strategy, bars, equity, trades, exposure_bars) -> dict:
     gross_win = sum(t["pnl"] for t in wins)
     gross_loss = -sum(t["pnl"] for t in losses)
     from datetime import date
-    days = (date.fromisoformat(bars[-1].date) - date.fromisoformat(bars[0].date)).days
+    days = (date.fromisoformat(bars[-1].date[:10]) - date.fromisoformat(bars[0].date[:10])).days  # intraday: "YYYY-MM-DD HH:MM"
     total = end / start - 1
     cagr = (end / start) ** (365.25 / days) - 1 if days > 0 and end > 0 else None
     bh = bars[-1].close / bars[0].open - 1

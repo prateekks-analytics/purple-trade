@@ -80,6 +80,15 @@ ANALYSES = [
      "detail": "Needs a social-media feed. Not connected yet."},
 ]
 
+# Sources the news-driven agents can read (shown as the agent's "analyses" so the user picks them).
+NEWS_SOURCES = [
+    {"id": "google", "label": "Google News", "available": True, "detail": "Indian news coverage; works for past days too."},
+    {"id": "reddit", "label": "Reddit trader posts", "available": True,
+     "detail": "r/IndianStreetBets and r/IndianStockMarket; recent posts only."},
+    {"id": "yahoo", "label": "Yahoo Finance headlines", "available": True, "detail": "Often empty for NSE stocks."},
+]
+NEWS_KINDS = ("ai-news", "ai-crew")
+
 
 def catalog() -> list[dict]:
     installed = ta_installed()
@@ -106,11 +115,21 @@ def catalog() -> list[dict]:
                     "source": {"name": "TradingAgents indicator guide", "url": TA_URL}, "fidelity": TA_GUIDE,
                     "analyses": [], "available": True, "speed": "instant", "strategy": b["strategy"]})
     out.append({
-        "id": "crewai-stock-analysis", "kind": "research", "title": "CrewAI Stock Analysis",
-        "tagline": "Research crew that reads SEC 10-K/10-Q filings and the web, then writes an investment report.",
-        "source": {"name": "crewAI-examples (stock_analysis)", "url": CREW_URL},
-        "fidelity": "Not runnable yet: it needs web search and SEC filings (US companies) and makes no trades.",
-        "analyses": [], "available": False, "speed": "-",
+        "id": "news-pulse", "kind": "ai-news", "title": "News & Social Pulse",
+        "tagline": "Reads the latest headlines and trader posts about the stock, scores the mood, and trades when "
+                   "news and price agree.",
+        "source": {"name": "Purple Trade (Google News, Reddit, Yahoo Finance feeds)", "url": ""},
+        "fidelity": "One AI call per decision on the AI you connect. Headlines are filtered by publish time, so a "
+                    "backtest never sees later news. Reddit and Yahoo only have recent posts; older days use Google News.",
+        "analyses": NEWS_SOURCES, "available": True, "speed": "about 5-20 s per decision",
+    })
+    out.append({
+        "id": "crew-nse", "kind": "ai-crew", "title": "Stock Analysis Crew (NSE)",
+        "tagline": "Research analyst → financial analyst → investment advisor write up the stock and make the call.",
+        "source": {"name": "crewAI-examples stock_analysis (Prof. Harnal's link), adapted for NSE", "url": CREW_URL},
+        "fidelity": "Purple's re-implementation of the crew's three roles, not crewAI's code. SEC filings are replaced "
+                    "by Yahoo Finance annual figures and web search by news feeds. Three AI calls per decision.",
+        "analyses": NEWS_SOURCES, "available": True, "speed": "about 15-60 s per decision",
     })
     return out
 

@@ -2,18 +2,24 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from . import market, superagent as sa
-from .ai.providers import KEY_ENV, OllamaProvider
+from . import live_agents, market, superagent as sa
+from .ai.providers import KEY_ENV, OllamaProvider, ProviderError, make_provider
 from .describe import describe, validate
 from .engine import bars_hash, run_backtest
 from .schema import Strategy
 from .store import Store
 
-AI_KINDS = ("ai-team", "ta-original")
+AI_KINDS = ("ai-team", "ta-original", *sa.NEWS_KINDS)
+SYMBOL_KINDS = ("ta-original", *sa.NEWS_KINDS)  # agents that need a real NSE symbol (their data comes from the web)
+# bar sizes a paper account can follow, per agent kind (AI agents decide at most every 15 minutes: API limits)
+INTERVALS = {"rules": ("1d", "5m", "15m", "30m"), "ai-news": ("1d", "15m", "30m"), "ai-crew": ("1d", "30m"),
+             "ai-team": ("1d",), "ta-original": ("1d",)}
+FREE_BACKGROUND_AI = ("gemini", "ollama")  # the live loop only calls the server's own free AI, never a browser key
 
 
 class RunIn(BaseModel):
@@ -36,6 +42,7 @@ class PaperIn(BaseModel):
     symbol: str | None = None
     capital: float = Field(100_000, gt=0, le=1e10)
     analyses: list[str] = ["market"]
+    interval: str = "1d"  # "1d" daily, or an intraday bar size such as "5m" (live accounts only)
 
 
 def register(app: FastAPI, db: Store):
@@ -58,6 +65,33 @@ def register(app: FastAPI, db: Store):
         env = KEY_ENV.get(request.headers.get("x-ai-provider", "").strip().lower())
         key = request.headers.get("x-ai-key", "").strip()
         return {env: key} if env and key else {}
+
+    def ai_for(request: Request | None):
+        """The AI connected in this browser (key sent per request, never stored), else the server's default."""
+        name = request.headers.get("x-ai-provider", "").strip().lower() if request else ""
+        if name:
+            try:
+                return make_provider(name, request.headers.get("x-ai-key", "").strip(),
+                                     request.headers.get("x-ai-model", "").strip())
+            except ProviderError as e:
+                raise HTTPException(400, str(e)) from e
+        return app.state.provider
+
+    def ai_or_503(p):
+        if not p.status()["available"]:
+            raise HTTPException(503, "No AI is connected, so this agent can't decide. Connect an AI (free Gemini works).")
+        return p
+
+    _names: dict[str, str] = {}
+
+    def company(symbol: str) -> str:
+        """Company name for news searches (from Yahoo; the symbol itself when unknown)."""
+        if symbol not in _names:
+            try:
+                _names[symbol] = market.quote(symbol).get("name") or symbol.split(".")[0]
+            except market.MarketError:
+                return symbol.split(".")[0]
+        return _names[symbol]
 
     def default_ta_engine(keys: dict | None = None) -> dict:
         """Gemini Flash when a Google key is set, else local Qwen (used where the user picks no engine)."""
@@ -149,7 +183,13 @@ def register(app: FastAPI, db: Store):
             raise HTTPException(402, f"{e['label']} costs money per run. Confirm the cost estimate to continue.")
         return e
 
-    def decider(a: dict, bars, symbol: str, analyses: list[str], engine: dict | None = None, keys: dict | None = None):
+    def decider(a: dict, bars, symbol: str, analyses: list[str], engine: dict | None = None, keys: dict | None = None,
+                ai=None):
+        if a["kind"] in sa.NEWS_KINDS:
+            def complete(system, user):
+                return ai.complete(system, [{"role": "user", "content": user}])
+            make = live_agents.pulse_decider if a["kind"] == "ai-news" else live_agents.crew_decider
+            return make(bars, symbol, company(symbol), analyses, complete)
         if a["kind"] == "ta-original":
             return sa.ta_decider(bars, symbol, analyses, local_ai().model, engine, keys)
         return sa.team_decider(bars, symbol, team_complete())
@@ -171,13 +211,16 @@ def register(app: FastAPI, db: Store):
         keys = browser_keys(request)
         a = agent(body.agent_id)
         analyses = check_analyses(a, body.analyses)
-        engine = None
-        if a["kind"] == "ta-original":
-            engine = ta_engine_or_error(body.engine, body.confirm_paid, keys)
+        engine = ai = None
+        if a["kind"] in SYMBOL_KINDS:
+            if a["kind"] == "ta-original":
+                engine = ta_engine_or_error(body.engine, body.confirm_paid, keys)
+                if body.days > sa.TA_MAX_DAYS:
+                    raise HTTPException(422, f"The original TradingAgents takes many minutes per day; choose at most {sa.TA_MAX_DAYS} days.")
+            else:
+                ai = ai_or_503(ai_for(request))
             if not body.symbol:
                 raise HTTPException(422, "Enter an NSE symbol, e.g. RELIANCE.")
-            if body.days > sa.TA_MAX_DAYS:
-                raise HTTPException(422, f"The original TradingAgents takes many minutes per day; choose at most {sa.TA_MAX_DAYS} days.")
             meta = store_prices(body.symbol)
             did = meta["id"]
         else:
@@ -194,7 +237,9 @@ def register(app: FastAPI, db: Store):
             res.update(dataset=meta, describe=describe(st), mode="draft")
             return {"kind": "rules", "result": res, "strategy": st.model_dump()}
 
-        if engine and engine["id"] != "local":
+        if ai is not None:
+            model = f"{ai.name}:{ai.model}"
+        elif engine and engine["id"] != "local":
             model = f"{engine['id']}:{engine['quick']}/{engine['deep']}"  # separate decision cache per cloud engine
         elif engine:
             model = local_ai().model  # availability already checked by ta_engine_or_error
@@ -207,7 +252,7 @@ def register(app: FastAPI, db: Store):
         key = f"bt:{a['id']}:{model}:{','.join(analyses)}:{did}:{bars[start].date}"
         cached = db.get_decisions(key)
         missing = sum(1 for b in bars[start:] if b.date not in cached)
-        decide = decider(a, bars, symbol, analyses, engine, keys)
+        decide = decider(a, bars, symbol, analyses, engine, keys, ai)
 
         def work(log, progress):
             ds = sa.decide_days(bars, start, cached, decide, log, progress,
@@ -226,8 +271,88 @@ def register(app: FastAPI, db: Store):
             raise HTTPException(404, "Job not found (the server may have restarted)")
         return j
 
+    def fetch_intraday(symbol: str, interval: str, range_: str) -> int:
+        try:
+            return db.upsert_bars(symbol, interval, market.intraday_bars(symbol, interval, range_))
+        except market.MarketError as e:
+            raise HTTPException(429 if isinstance(e, market.RateLimited) else 502,
+                                f"Couldn't download {interval} prices for {symbol}: {e}") from e
+
+    # ----- live loop: keeps live paper accounts moving while the server runs -----
+    loop = {"last_tick": None, "last_error": None, "updated": 0, "decided": 0, "daily_done": set()}
+    busy: set[str] = set()
+
+    def session_state(now: datetime) -> str:
+        ist = now.astimezone(market.IST)
+        if ist.weekday() >= 5:
+            return "closed"
+        hm = (ist.hour, ist.minute)
+        return "open" if (9, 15) <= hm < (15, 45) else "after" if hm >= market.SETTLED else "closed"
+
+    def tick(now: datetime | None = None) -> dict:
+        """One pass: fetch new intraday bars during the session, the day's close after 16:00 IST, and let the
+        server's own free AI decide pending bars of news agents. Errors are recorded, never raised."""
+        now = now or datetime.now(market.IST)
+        state = session_state(now)
+        day = now.astimezone(market.IST).date().isoformat()
+        accounts = [p for p in db.list_paper() if live_symbol(p)]
+        done: set = set()
+        for p in accounts:
+            try:
+                if intraday(p) and state in ("open", "after") and (p["symbol"], p["interval"]) not in done:
+                    done.add((p["symbol"], p["interval"]))
+                    loop["updated"] += db.upsert_bars(p["symbol"], p["interval"],
+                                                      market.intraday_bars(p["symbol"], p["interval"], "1d"))
+                elif not intraday(p) and state == "after" and (day, p["symbol"]) not in loop["daily_done"]:
+                    store_prices(p["symbol"])
+                    loop["daily_done"].add((day, p["symbol"]))
+            except (market.MarketError, HTTPException) as e:
+                loop["last_error"] = str(getattr(e, "detail", None) or e)
+                if isinstance(e, market.RateLimited) or "limiting" in loop["last_error"]:
+                    break
+        ai = app.state.provider
+        if getattr(ai, "name", "") in FREE_BACKGROUND_AI:
+            for p in accounts:
+                a = next((x for x in sa.catalog() if x["id"] == p["agent_id"]), None)
+                if not a or a["kind"] not in sa.NEWS_KINDS or p["id"] in busy:
+                    continue
+                bars = account_bars(p)
+                start = next((i for i, b in enumerate(bars) if b.date >= p["start_date"]), None)
+                key = f"paper:{p['id']}"
+                cached = db.get_decisions(key)
+                if start is None or all(b.date in cached for b in bars[start:]) or not ai.status()["available"]:
+                    continue
+                busy.add(p["id"])
+                try:
+                    do = decider(a, bars, p["symbol"], p.get("analyses") or ["google"], ai=ai)
+                    ds = sa.decide_days(bars, start, cached, do, lambda *x: None, lambda: None,
+                                        save=lambda d, x, k=key: db.save_decision(k, d, x))
+                    loop["decided"] += len(ds) - len(cached)
+                except Exception as e:  # noqa: BLE001 - AI/network failures are reported in the status
+                    loop["last_error"] = f"{a['title']}: {type(e).__name__}: {e}"
+                finally:
+                    busy.discard(p["id"])
+        loop["last_tick"] = now.isoformat(timespec="seconds")
+        return {"session": state, "accounts": len(accounts)}
+
+    app.state.live_tick = tick
+
+    @app.get("/api/market/status")
+    def market_status():
+        intr = sum(1 for p in db.list_paper() if live_symbol(p) and intraday(p))
+        prov = app.state.provider
+        return {**market.status(), "session": session_state(datetime.now(market.IST)),
+                "loop": {"last_tick": loop["last_tick"], "last_error": loop["last_error"],
+                         "bars_saved": loop["updated"], "ai_decisions": loop["decided"], "intraday_accounts": intr,
+                         "background_ai": getattr(prov, "name", "") in FREE_BACKGROUND_AI}}
+
     # ----- paper trading -----
+    def intraday(p: dict) -> bool:
+        return (p.get("interval") or "1d") != "1d"
+
     def account_bars(p: dict):
+        if intraday(p):
+            return db.get_market_bars(p["symbol"], p["interval"])
         if p["synthetic"]:
             return sa.paper_bars(True, db.get_bars(p["dataset_id"]) or [], p["sim_days"])
         latest = db.latest_dataset_for(p["symbol"]) if p["symbol"] else None
@@ -243,6 +368,10 @@ def register(app: FastAPI, db: Store):
         bars = account_bars(p)
         if p["synthetic"]:
             data_note = "Synthetic prices (not market data). Use 'Next trading day' to move the market forward."
+        elif intraday(p):
+            data_note = (f"Live {p['symbol']} {p['interval']} bars from Yahoo Finance (about 15 minutes delayed). While NSE is "
+                         "open, Purple fetches each finished bar every minute, even with this page closed; the bot decides "
+                         "on the bar's close and trades at the next bar's open.")
         elif live_symbol(p):
             data_note = (f"Real {p['symbol']} prices from Yahoo Finance (delayed). The account moves forward on its own "
                          "after each NSE session closes; the bot decides on the close and trades at the next open.")
@@ -251,7 +380,7 @@ def register(app: FastAPI, db: Store):
         start = next((i for i, b in enumerate(bars) if b.date >= p["start_date"]), None)
         if start is None:
             raise HTTPException(409, "Price data no longer reaches the account's start date.")
-        view = {"account": p, "agent": {"id": a["id"], "title": a["title"], "kind": a["kind"]},
+        view = {"account": p, "agent": {"id": a["id"], "title": a["title"], "kind": a["kind"]}, "interval": p.get("interval") or "1d",
                 "latest_date": bars[-1].date, "data_note": data_note, "pending_days": [],
                 "can_refresh": live_symbol(p)}
         if a["kind"] == "rules":
@@ -284,7 +413,10 @@ def register(app: FastAPI, db: Store):
     def create_paper(body: PaperIn):
         a = agent(body.agent_id)
         analyses = check_analyses(a, body.analyses)
-        if a["kind"] == "ta-original" and not body.symbol:
+        allowed = INTERVALS.get(a["kind"], ("1d",))
+        if body.interval not in allowed:
+            raise HTTPException(422, f"{a['title']} can follow these bar sizes: {', '.join(allowed)}.")
+        if (a["kind"] in SYMBOL_KINDS or body.interval != "1d") and not body.symbol:
             raise HTTPException(422, "Enter an NSE symbol, e.g. RELIANCE.")
         if body.symbol:  # live account: start from the latest completed session on Yahoo Finance
             meta = store_prices(body.symbol)
@@ -293,11 +425,17 @@ def register(app: FastAPI, db: Store):
         bars = db.get_bars(meta["id"]) if meta else None
         if not meta or not bars:
             raise HTTPException(404, "Dataset not found")
+        if body.interval != "1d":
+            fetch_intraday(meta["symbol"], body.interval, market.INTRADAY_RANGE)
+            bars = db.get_market_bars(meta["symbol"], body.interval)
+            if len(bars) < 2:
+                raise HTTPException(409, f"Yahoo Finance returned no {body.interval} bars for {meta['symbol']}.")
         if a["kind"] == "rules":
             rules_ready(a["strategy"], len(bars))
-        name = f"{a['title']} · {meta['symbol'] or meta['name']}"
+        every = "" if body.interval == "1d" else f" · {body.interval}"
+        name = f"{a['title']} · {meta['symbol'] or meta['name']}{every}"
         p = db.add_paper(name[:120], a["id"], meta["id"], meta["symbol"], bool(meta["synthetic"]),
-                         bars[-1].date, body.capital, analyses)
+                         bars[-1].date, body.capital, analyses, body.interval)
         return paper_view(p)
 
     @app.get("/api/superagent/paper/{pid}")
@@ -317,7 +455,10 @@ def register(app: FastAPI, db: Store):
         p = paper_or_404(pid)
         if not live_symbol(p):
             raise HTTPException(409, "Only accounts on a real NSE symbol can fetch live prices.")
-        store_prices(p["symbol"])
+        if intraday(p):
+            fetch_intraday(p["symbol"], p["interval"], "5d")
+        else:
+            store_prices(p["symbol"])
         return paper_view(p)
 
     @app.post("/api/superagent/paper/{pid}/decide")
@@ -330,14 +471,15 @@ def register(app: FastAPI, db: Store):
         if a["kind"] not in AI_KINDS:
             raise HTTPException(400, "Rule bots decide instantly; nothing to run.")
         engine = default_ta_engine(keys) if a["kind"] == "ta-original" else None
-        if engine is None:
+        ai = ai_or_503(ai_for(request)) if a["kind"] in sa.NEWS_KINDS else None
+        if engine is None and ai is None:
             model_or_503()
         bars = account_bars(p)
         start = next(i for i, b in enumerate(bars) if b.date >= p["start_date"])
         key = f"paper:{pid}"
         cached = db.get_decisions(key)
         analyses = p.get("analyses") or ["market"]
-        do = decider(a, bars, p["symbol"] or "the stock", analyses, engine, keys)
+        do = decider(a, bars, p["symbol"] or "the stock", analyses, engine, keys, ai)
 
         def work(log, progress):
             sa.decide_days(bars, start, cached, do, log, progress, save=lambda d, x: db.save_decision(key, d, x))

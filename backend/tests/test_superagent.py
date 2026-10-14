@@ -57,7 +57,7 @@ def test_catalog_rule_bots_are_valid():
         st = sa.rule_strategy(bid)
         assert st is not None and st.questions == []
     ids = [a["id"] for a in sa.catalog()]
-    assert ids[:2] == ["tradingagents-original", "tradingagents"] and "crewai-stock-analysis" in ids
+    assert ids[:2] == ["tradingagents-original", "tradingagents"] and {"news-pulse", "crew-nse"} <= set(ids)
 
 
 def test_rule_bot_runs_on_sample(setup):
@@ -69,10 +69,12 @@ def test_rule_bot_runs_on_sample(setup):
         assert body["kind"] == "rules" and body["result"]["metrics"]["bars"] == ds["rows"]
 
 
-def test_research_agent_not_runnable(setup):
+def test_news_agents_need_a_real_symbol(setup):
     c, _, ds = setup
-    r = c.post("/api/superagent/run", json={"agent_id": "crewai-stock-analysis", "dataset_id": ds["id"]})
-    assert r.status_code == 409
+    for aid in ("crew-nse", "news-pulse"):
+        r = c.post("/api/superagent/run", json={"agent_id": aid, "dataset_id": ds["id"], "analyses": ["google"]})
+        assert r.status_code == 422 and "NSE symbol" in r.json()["detail"]
+    assert c.post("/api/superagent/run", json={"agent_id": "crewai-stock-analysis", "dataset_id": ds["id"]}).status_code == 404
 
 
 def test_unavailable_analysis_rejected(setup):

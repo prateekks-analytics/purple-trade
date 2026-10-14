@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import threading
+from contextlib import asynccontextmanager
 
 from pathlib import Path, PurePath
 
@@ -41,7 +43,19 @@ class BacktestIn(BaseModel):
 def create_app(store: Store | None = None, provider=None) -> FastAPI:
     if provider is None:  # real run (tests pass their own provider): read purple/.env first
         load_env()
-    app = FastAPI(title="Purple Trade", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        """Live loop: every 60 s, move live paper accounts forward (tests drive app.state.live_tick directly)."""
+        stop = threading.Event()
+        if os.environ.get("PURPLE_LIVE_LOOP", "1") != "0":
+            def run():
+                while not stop.wait(60):
+                    app.state.live_tick()
+            threading.Thread(target=run, name="purple-live", daemon=True).start()
+        yield
+        stop.set()
+
+    app = FastAPI(title="Purple Trade", version="0.1.0", lifespan=lifespan)
     db = store or default_store()
     app.state.store = db
     app.state.provider = provider or ai.default_provider()

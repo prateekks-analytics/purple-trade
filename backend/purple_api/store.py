@@ -43,6 +43,11 @@ CREATE TABLE IF NOT EXISTS paper_accounts (
   symbol TEXT, synthetic INTEGER NOT NULL, start_date TEXT NOT NULL, sim_days INTEGER NOT NULL DEFAULT 0,
   capital REAL NOT NULL, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS market_bars (
+  symbol TEXT NOT NULL, interval TEXT NOT NULL, ts TEXT NOT NULL,
+  open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, volume REAL NOT NULL,
+  PRIMARY KEY (symbol, interval, ts)
+);
 """
 
 
@@ -83,6 +88,9 @@ class Store:
         cols = {r["name"] for r in self._db.execute("PRAGMA table_info(paper_accounts)")}
         if "analyses" not in cols:  # added 3 Oct 2026
             self._db.execute("ALTER TABLE paper_accounts ADD COLUMN analyses TEXT")
+            self._db.commit()
+        if "interval" not in cols:  # added 15 Oct 2026: '1d' daily, or an intraday bar size such as '5m'
+            self._db.execute("ALTER TABLE paper_accounts ADD COLUMN interval TEXT NOT NULL DEFAULT '1d'")
             self._db.commit()
 
     def _q(self, sql: str, args=()):
@@ -227,12 +235,12 @@ class Store:
                 (key, date, json.dumps(payload), _now()))
 
     def add_paper(self, name: str, agent_id: str, dataset_id: str, symbol: str | None, synthetic: bool,
-                  start_date: str, capital: float, analyses: list[str] | None = None) -> dict:
+                  start_date: str, capital: float, analyses: list[str] | None = None, interval: str = "1d") -> dict:
         pid = _id()
-        self._q("""INSERT INTO paper_accounts(id,name,agent_id,dataset_id,symbol,synthetic,start_date,sim_days,capital,created_at,analyses)
-                   VALUES(?,?,?,?,?,?,?,0,?,?,?)""",
+        self._q("""INSERT INTO paper_accounts(id,name,agent_id,dataset_id,symbol,synthetic,start_date,sim_days,capital,created_at,analyses,interval)
+                   VALUES(?,?,?,?,?,?,?,0,?,?,?,?)""",
                 (pid, name, agent_id, dataset_id, symbol, int(synthetic), start_date, capital, _now(),
-                 json.dumps(analyses or [])))
+                 json.dumps(analyses or []), interval))
         return self.get_paper(pid)
 
     @staticmethod
@@ -254,6 +262,21 @@ class Store:
     def delete_paper(self, pid: str):
         self._q("DELETE FROM agent_decisions WHERE cache_key=?", (f"paper:{pid}",))
         self._q("DELETE FROM paper_accounts WHERE id=?", (pid,))
+
+    # ----- intraday bars (live paper accounts), one row per completed bar -----
+    def upsert_bars(self, symbol: str, interval: str, bars: list[Bar]) -> int:
+        with self._lock:
+            before = self._db.total_changes
+            self._db.executemany(
+                "INSERT OR REPLACE INTO market_bars(symbol,interval,ts,open,high,low,close,volume) VALUES(?,?,?,?,?,?,?,?)",
+                [(symbol, interval, b.date, b.open, b.high, b.low, b.close, b.volume) for b in bars])
+            self._db.commit()
+            return self._db.total_changes - before
+
+    def get_market_bars(self, symbol: str, interval: str) -> list[Bar]:
+        rows = self._q("SELECT ts,open,high,low,close,volume FROM market_bars WHERE symbol=? AND interval=? ORDER BY ts",
+                       (symbol, interval)).fetchall()
+        return [Bar(*tuple(r)) for r in rows]
 
     def latest_dataset_for(self, symbol: str) -> dict | None:
         r = self._q("SELECT id FROM datasets WHERE symbol=? AND synthetic=0 ORDER BY last_date DESC, created_at DESC LIMIT 1",

@@ -119,8 +119,9 @@ def market_snapshot(bars: Sequence, t: int) -> dict:
 
 def market_report(symbol: str, s: dict) -> str:
     c = s["close"]
-    lines = [f"Market report for {symbol} on {s['date']} (daily bars, readings on this close).",
-             f"- Close {_f(c)}. 5-day change {_f(s['chg5_pct'])}%, 20-day change {_f(s['chg20_pct'])}%."]
+    unit = "day" if len(str(s["date"])) == 10 else "bar"  # intraday dates carry a time: "YYYY-MM-DD HH:MM"
+    lines = [f"Market report for {symbol} on {s['date']} ({'daily' if unit == 'day' else 'intraday'} bars, readings on this close).",
+             f"- Close {_f(c)}. 5-{unit} change {_f(s['chg5_pct'])}%, 20-{unit} change {_f(s['chg20_pct'])}%."]
     if s["sma50"] is not None:
         lines.append(f"- SMA50 {_f(s['sma50'])}: close is {'above' if c > s['sma50'] else 'below'} it (medium-term trend).")
     if s["sma200"] is not None and s["sma50"] is not None:
