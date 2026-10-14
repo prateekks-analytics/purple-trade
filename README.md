@@ -22,7 +22,9 @@ your own ideas or files into rules, and to run AI agents.
 - **Test a bot**: pick a ready-made bot or your own strategy, choose a stock and period, run a backtest,
   and read what the result means.
 - **Build your own**: describe an idea in plain words (or upload a file) and get exact rules you can edit.
-- **Paper accounts**: follow a bot day by day with virtual money.
+- **Paper accounts**: follow a bot day by day with virtual money. On a real NSE stock (Add a stock → Get live
+  prices) the account shows the live price (Yahoo Finance, about 15 minutes delayed) and moves forward by itself
+  after each trading session closes.
 
 Your strategies and paper accounts are saved on your computer in `%LOCALAPPDATA%\PurpleTrade`.
 The original TradingAgents agent needs a separate developer install and is not part of the download.

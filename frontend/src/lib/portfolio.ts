@@ -34,6 +34,10 @@ export function totals(rows: Holding[] | null) {
   return { value, start, change: value - start, changePct: start ? (value / start - 1) * 100 : 0, day: value - prev }
 }
 
+/** Real-symbol prices that Yahoo Finance can refresh (not CSV imports without an exchange suffix, not the sample). */
+export const isLive = (d: { synthetic: number | boolean; symbol: string | null } | null | undefined) =>
+  Boolean(d && !d.synthetic && d.symbol && /\.(NS|BO)$|^\^/.test(d.symbol))
+
 /** NSE regular session, Mon–Fri 09:15–15:30 IST. Exchange holidays are not checked. */
 export function nseStatus(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(now)

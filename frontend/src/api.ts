@@ -1,5 +1,5 @@
 import type {
-  AgentImport, AiProvider, BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, Review, RunResponse, Strategy,
+  AgentImport, AiProvider, Quote, BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, Review, RunResponse, Strategy,
   StrategyDoc, StrategySummary, SuperAgentInfo, Template,
 } from './types'
 import { aiHeaders } from './lib/aiSettings'
@@ -62,6 +62,8 @@ export const api = {
     fd.append('source_note', sourceNote)
     return req<Dataset>('/api/datasets', { method: 'POST', body: fd })
   },
+  marketPrices: (symbol: string) => req<Dataset>('/api/market/prices', json('POST', { symbol })),
+  marketQuote: (symbol: string) => req<Quote>(`/api/market/quote?symbol=${encodeURIComponent(symbol)}`),
   importAgent: (file: File) => {
     const fd = new FormData()
     fd.append('file', file)

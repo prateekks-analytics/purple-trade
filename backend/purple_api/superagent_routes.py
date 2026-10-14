@@ -6,7 +6,7 @@ import re
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from . import superagent as sa
+from . import market, superagent as sa
 from .ai.providers import KEY_ENV, OllamaProvider
 from .describe import describe, validate
 from .engine import bars_hash, run_backtest
@@ -24,6 +24,10 @@ class RunIn(BaseModel):
     analyses: list[str] = ["market"]
     engine: str = "local"  # original TradingAgents only: which AI runs it (see superagent.TA_ENGINES)
     confirm_paid: bool = False  # must be true for a paid engine: the user saw the cost estimate and approved it
+
+
+class PricesIn(BaseModel):
+    symbol: str = Field(..., min_length=1, max_length=30)
 
 
 class PaperIn(BaseModel):
@@ -110,18 +114,29 @@ def register(app: FastAPI, db: Store):
             raise HTTPException(409, {"errors": [f"Dataset has {n_bars} rows but these rules need {v['warmup_bars']} days of warm-up plus one more."]})
 
     def store_prices(symbol: str) -> dict:
-        """Download daily prices through TradingAgents' Yahoo connection and keep them as a dataset."""
+        """Download completed daily prices from Yahoo Finance and keep them as a dataset (deduplicated by hash)."""
         try:
-            bars = sa.ta_prices(symbol)
-        except RuntimeError as e:
-            raise HTTPException(502, f"Couldn't download prices for {sa.nse_ticker(symbol)}: {e}") from e
+            ticker = market.ticker(symbol)
+            bars = market.daily_bars(ticker)
+        except market.MarketError as e:
+            raise HTTPException(502, f"Couldn't download prices for {symbol}: {e}") from e
         h = bars_hash(bars)
         existing = db.find_dataset_by_hash(h)
         if existing:
             return existing
-        ticker = sa.nse_ticker(symbol)
-        return db.add_dataset(f"{ticker} · {bars[0].date} → {bars[-1].date}", ticker,
-                              "Yahoo Finance via yfinance (unofficial; not verified against NSE)", bars, h)
+        return db.add_dataset(f"{ticker} · {bars[0].date} → {bars[-1].date}", ticker, market.SOURCE, bars, h)
+
+    # ----- live market data -----
+    @app.post("/api/market/prices")
+    def market_prices(body: PricesIn):
+        return store_prices(body.symbol)
+
+    @app.get("/api/market/quote")
+    def market_quote(symbol: str):
+        try:
+            return market.quote(symbol)
+        except market.MarketError as e:
+            raise HTTPException(502, str(e)) from e
 
     def ta_engine_or_error(engine_id: str, confirm_paid: bool, keys: dict) -> dict:
         e = sa.ta_engine(engine_id)
@@ -218,13 +233,19 @@ def register(app: FastAPI, db: Store):
         latest = db.latest_dataset_for(p["symbol"]) if p["symbol"] else None
         return db.get_bars(latest["id"] if latest else p["dataset_id"]) or []
 
+    def live_symbol(p: dict) -> bool:
+        """Real-symbol accounts whose prices come from (or can come from) Yahoo Finance."""
+        s = p["symbol"] or ""
+        return not p["synthetic"] and (s.endswith(".NS") or s.endswith(".BO") or s.startswith("^"))
+
     def paper_view(p: dict) -> dict:
         a = agent(p["agent_id"])
         bars = account_bars(p)
         if p["synthetic"]:
             data_note = "Synthetic prices (not market data). Use 'Next trading day' to move the market forward."
-        elif a["kind"] == "ta-original" or (p["symbol"] or "").endswith(".NS"):
-            data_note = f"Real {p['symbol']} prices. Use 'Refresh prices' after each trading day to move the account forward."
+        elif live_symbol(p):
+            data_note = (f"Real {p['symbol']} prices from Yahoo Finance (delayed). The account moves forward on its own "
+                         "after each NSE session closes; the bot decides on the close and trades at the next open.")
         else:
             data_note = f"Import a newer CSV for {p['symbol'] or 'this stock'} to move the account forward."
         start = next((i for i, b in enumerate(bars) if b.date >= p["start_date"]), None)
@@ -232,7 +253,7 @@ def register(app: FastAPI, db: Store):
             raise HTTPException(409, "Price data no longer reaches the account's start date.")
         view = {"account": p, "agent": {"id": a["id"], "title": a["title"], "kind": a["kind"]},
                 "latest_date": bars[-1].date, "data_note": data_note, "pending_days": [],
-                "can_refresh": not p["synthetic"] and bool(p["symbol"]) and sa.ta_installed()}
+                "can_refresh": live_symbol(p)}
         if a["kind"] == "rules":
             st = a["strategy"].model_copy(update={"initial_capital": p["capital"]})
             res = run_backtest(st, bars, trade_from=start)
@@ -263,9 +284,9 @@ def register(app: FastAPI, db: Store):
     def create_paper(body: PaperIn):
         a = agent(body.agent_id)
         analyses = check_analyses(a, body.analyses)
-        if a["kind"] == "ta-original":
-            if not body.symbol:
-                raise HTTPException(422, "Enter an NSE symbol, e.g. RELIANCE.")
+        if a["kind"] == "ta-original" and not body.symbol:
+            raise HTTPException(422, "Enter an NSE symbol, e.g. RELIANCE.")
+        if body.symbol:  # live account: start from the latest completed session on Yahoo Finance
             meta = store_prices(body.symbol)
         else:
             meta = db.get_dataset_meta(body.dataset_id) if body.dataset_id else None
@@ -294,8 +315,8 @@ def register(app: FastAPI, db: Store):
     @app.post("/api/superagent/paper/{pid}/refresh")
     def refresh(pid: str):
         p = paper_or_404(pid)
-        if p["synthetic"] or not p["symbol"]:
-            raise HTTPException(409, "Only real-symbol accounts can refresh prices.")
+        if not live_symbol(p):
+            raise HTTPException(409, "Only accounts on a real NSE symbol can fetch live prices.")
         store_prices(p["symbol"])
         return paper_view(p)
 

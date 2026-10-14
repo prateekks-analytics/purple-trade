@@ -48,6 +48,19 @@ provider (e7f17fd); `launcher.py` + `PURPLE_DIST` for the exe; hosted flag in `/
 API after backend edits. Visual checks used headless Edge over CDP (`shot.mjs` lived in the session scratchpad, not
 the repo) because the in-app browser pane does not render while the window is minimised.
 
+**Live market data (15 Oct, committed locally; not pushed yet)**
+- `purple_api/market.py`: Yahoo Finance public chart endpoint via httpx (no key, no new package). Completed daily
+  sessions only (today's bar counts after 16:00 IST; Yahoo's blank newest close is filled from `regularMarketPrice`).
+  Quotes ~15 min delayed; unofficial, not verified against NSE.
+- Endpoints: `POST /api/market/prices {symbol}` (stores a dataset, deduplicated by hash), `GET /api/market/quote`.
+  Paper accounts created with a `symbol` (any bot kind) start at the latest session; `refresh` uses Yahoo, no
+  TradingAgents install needed. `ta_prices` removed; TA tests now mock `market.daily_bars`. Tests: **67 passing**.
+- UI: price picker "Add a stock" → "Get live prices"; Test a bot passes the symbol for Yahoo datasets; Paper page shows
+  a live quote panel (polls every 60 s, pauses when the tab is hidden), "Value now", and auto-refreshes the account
+  once a newer session has closed. Daily rules still decide on the close and fill at the next open (no intraday).
+- Local test account left in the DB: "Golden Cross Trend · INFY.NS" (live). Hosted demo reaching Yahoo from Render:
+  UNVERIFIED until pushed.
+
 **Not done / open**
 - Full TradingAgents run through the new UI (~10–20 min; ask first). TradingAgents is not in the exe or the web demo.
 - Docker image never built locally (Docker Desktop off); Render build succeeded, which is the real check.

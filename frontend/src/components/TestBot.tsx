@@ -6,6 +6,7 @@ import { DecisionLog, DownloadCode, errText, JobProgress, useJob } from './Agent
 import { Assumptions, DataPicker, ResultDetail, VerdictPanel } from './Results'
 import { CandleChart, RangeTabs, sliceRange, type Bar as PriceBar, type RangeKey } from './Charts'
 import { openAiConnect } from '../lib/aiSettings'
+import { isLive } from '../lib/portfolio'
 
 /** One row in the bot chooser: a curated agent, a rule bot, or a saved strategy version. */
 interface Bot {
@@ -129,7 +130,7 @@ export function TestBot({ initialBot, onPaperCreated, onBuild }: {
     if (!bot) return
     setPaperBusy(true); setErr(null)
     try {
-      const v = await api.saPaperCreate(bot.id, isAI ? null : datasetId, capital, isAI ? analyses : [], isAI ? symbol : undefined)
+      const v = await api.saPaperCreate(bot.id, isAI ? null : datasetId, capital, isAI ? analyses : [], isAI ? symbol : isLive(dataset) ? dataset!.symbol! : undefined)
       onPaperCreated(v.account.id)
     } catch (e) { setErr(errText(e)); setPaperBusy(false) }
   }

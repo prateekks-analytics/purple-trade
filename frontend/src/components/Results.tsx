@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { api, ApiError } from '../api'
 import type { BacktestResult, Dataset } from '../types'
 import { fmtMoney, fmtPct } from '../lib/tree'
+import { isLive } from '../lib/portfolio'
 import { readVerdict } from '../lib/verdict'
 import { LineChart, type Marker } from './LineChart'
 import { CandleChart, RangeTabs, sliceRange, type Bar, type RangeKey, type TradeMark } from './Charts'
@@ -14,6 +15,7 @@ export function DataPicker({ datasets, value, onChange, onUploaded, label = 'Pri
   const [symbol, setSymbol] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  const [live, setLive] = useState('')
   const [msg, setMsg] = useState<{ kind: 'err' | 'ok'; text: string } | null>(null)
   const current = datasets.find(d => d.id === value)
 
@@ -31,6 +33,19 @@ export function DataPicker({ datasets, value, onChange, onUploaded, label = 'Pri
     } finally { setBusy(false) }
   }
 
+  const fetchLive = async () => {
+    if (!live.trim()) { setMsg({ kind: 'err', text: 'Enter an NSE symbol, e.g. RELIANCE.' }); return }
+    setBusy(true); setMsg(null)
+    try {
+      const d = await api.marketPrices(live.trim())
+      onUploaded(d)
+      setMsg({ kind: 'ok', text: `Loaded ${d.rows} trading days of ${d.symbol}, ${d.first_date} to ${d.last_date}.` })
+      setOpen(false); setLive('')
+    } catch (e) {
+      setMsg({ kind: 'err', text: e instanceof ApiError ? e.message : String(e) })
+    } finally { setBusy(false) }
+  }
+
   return (
     <div className="data-picker">
       <div className="field">
@@ -39,18 +54,24 @@ export function DataPicker({ datasets, value, onChange, onUploaded, label = 'Pri
           <select id="dp-select" value={value ?? ''} onChange={e => onChange(e.target.value)}>
             {datasets.map(d => <option key={d.id} value={d.id}>{d.synthetic ? 'Sample stock (synthetic prices)' : d.symbol ?? d.name}, {d.first_date} to {d.last_date}, {d.rows} days</option>)}
           </select>
-          <button type="button" className="btn quiet" onClick={() => setOpen(o => !o)} aria-expanded={open}>Import NSE prices</button>
+          <button type="button" className="btn quiet" onClick={() => setOpen(o => !o)} aria-expanded={open}>Add a stock</button>
         </div>
         {current && (
           <p className={`field-note ${current.synthetic ? 'warn' : ''}`}>
             {current.synthetic ? 'Synthetic prices made for trying the app. Not market data.'
+              : isLive(current) ? `${current.source_note ?? 'Yahoo Finance'}. Completed sessions only.`
               : `Source you gave: ${current.source_note || 'not stated'}.`}
           </p>
         )}
       </div>
       {open && (
         <div className="upload-panel">
-          <p className="field-note">Daily prices for one stock: the CSV from NSE's historical data page, or any file with date, open, high, low and close columns.</p>
+          <p className="field-note">Live NSE daily prices from Yahoo Finance (free, about 15 minutes delayed, not verified against NSE).</p>
+          <form className="upload-row" onSubmit={e => { e.preventDefault(); fetchLive() }}>
+            <input placeholder="NSE symbol, e.g. RELIANCE" value={live} onChange={e => setLive(e.target.value.toUpperCase())} aria-label="NSE symbol" />
+            <button type="submit" className="btn primary" disabled={busy}>{busy ? 'Loading…' : 'Get live prices'}</button>
+          </form>
+          <p className="field-note">Or import daily prices for one stock: the CSV from NSE's historical data page, or any file with date, open, high, low and close columns.</p>
           <div className="upload-row">
             <input ref={fileRef} type="file" accept=".csv,text/csv" aria-label="CSV file" />
             <input placeholder="Symbol, e.g. INFY" value={symbol} onChange={e => setSymbol(e.target.value)} aria-label="Symbol" />

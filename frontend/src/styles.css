@@ -267,6 +267,13 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); width
 .today-line { font-size: 13.5px; }
 .today-reason { font-size: 12.5px; color: var(--ink-2); }
 .position { font-size: 13.5px; color: var(--ink-2); }
+.live-quote { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.live-quote .today-label { display: flex; align-items: center; gap: 6px; }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); flex: none; }
+.live-dot.on { background: var(--gain); box-shadow: 0 0 0 0 var(--gain); animation: live-pulse 2s ease-out infinite; }
+@keyframes live-pulse { to { box-shadow: 0 0 0 6px transparent; } }
+.live-price { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+.live-price span { font-size: 14px; font-weight: 600; }
 .move { display: flex; flex-direction: column; gap: 8px; }
 .move h3 { font-size: 14px; font-weight: 700; }
 .account-foot { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; }

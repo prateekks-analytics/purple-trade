@@ -400,11 +400,6 @@ def _ta_process(args: list[str], on_event, timeout_s: float, extra_env: dict | N
     return result
 
 
-def ta_prices(symbol: str, period: str = "2y") -> list[Bar]:
-    ev = _ta_process(["--ticker", nse_ticker(symbol), "--prices", period], lambda e: None, 180)
-    return [Bar(*row) for row in ev["bars"]]
-
-
 def ta_decider(bars: list[Bar], symbol: str, analysts: list[str], model: str, engine: dict | None = None,
                extra_env: dict | None = None):
     ticker = nse_ticker(symbol)

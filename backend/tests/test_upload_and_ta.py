@@ -7,7 +7,7 @@ import zlib
 import pytest
 from fastapi.testclient import TestClient
 
-from purple_api import agents, superagent as sa
+from purple_api import agents, market, superagent as sa
 from purple_api.main import create_app
 from purple_api.sample import synthetic_bars
 from purple_api.store import Store
@@ -85,8 +85,6 @@ def test_original_tradingagents_bridge(monkeypatch):
     calls = []
 
     def fake_process(args, on_event, timeout_s, extra_env=None):
-        if "--prices" in args:
-            return {"event": "prices", "bars": [[b.date, b.open, b.high, b.low, b.close, b.volume] for b in bars]}
         calls.append(args)
         on_event({"event": "step", "who": "market_report", "text": "Market analyst finished."})
         rating = ["Buy", "Overweight", "Sell"][len(calls) - 1]
@@ -95,6 +93,7 @@ def test_original_tradingagents_bridge(monkeypatch):
 
     monkeypatch.setattr(sa, "_ta_process", fake_process)
     monkeypatch.setattr(sa, "ta_installed", lambda: True)
+    monkeypatch.setattr(market, "daily_bars", lambda symbol, *a, **k: bars)
     c = TestClient(create_app(store=Store(":memory:"), provider=TeamProvider()))
     r = c.post("/api/superagent/run", json={"agent_id": "tradingagents-original", "symbol": "reliance", "days": 3,
                                              "analyses": ["market", "news"]})
@@ -118,14 +117,13 @@ def test_ta_cloud_engine_choice(monkeypatch):
     calls = []
 
     def fake_process(args, on_event, timeout_s, extra_env=None):
-        if "--prices" in args:
-            return {"event": "prices", "bars": [[b.date, b.open, b.high, b.low, b.close, b.volume] for b in bars]}
         calls.append(args)
         return {"event": "result", "rating": "Hold", "action": "HOLD", "reports": {}, "bull": "", "bear": "",
                 "usage": {"calls": 18, "input_tokens": 60000, "output_tokens": 9000}}
 
     monkeypatch.setattr(sa, "_ta_process", fake_process)
     monkeypatch.setattr(sa, "ta_installed", lambda: True)
+    monkeypatch.setattr(market, "daily_bars", lambda symbol, *a, **k: bars)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     c = TestClient(create_app(store=Store(":memory:"), provider=TeamProvider()))

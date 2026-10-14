@@ -205,6 +205,11 @@ export interface PaperView {
   result: BacktestResult
 }
 
+export interface Quote {
+  ticker: string; currency: string | null; price: number; prev_close: number | null; change_pct: number | null
+  time: string | null; session_open: boolean; source: string
+}
+
 export interface Health { hosted?: boolean; ok: boolean; ai: { provider: string; model: string; available: boolean; detail: string } }
 
 export interface AiProvider { id: string; label: string; cost: string; key_url: string; default_model: string; needs_key: boolean }
