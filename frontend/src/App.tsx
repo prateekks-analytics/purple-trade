@@ -109,7 +109,7 @@ export default function App() {
         <nav className="side-nav">
           {SECTIONS.map(s => [
             s.group && <span key={`g-${s.page}`} className="side-group">{s.group}</span>,
-            <a key={s.page} href={s.hash} className={section === s.page ? 'on' : ''} aria-current={section === s.page ? 'page' : undefined}>
+            <a key={s.page} href={s.hash} title={s.label} className={section === s.page ? 'on' : ''} aria-current={section === s.page ? 'page' : undefined}>
               {s.icon}<span>{s.label}</span>
             </a>,
           ])}
@@ -162,7 +162,7 @@ export default function App() {
           ) : route.page === 'build' ? (
             <Build key={aiVersion} health={health} onOpen={open} onTest={bot => go(`#/test/${bot}`)} />
           ) : route.page === 'paper' ? (
-            <Paper accountId={route.id} onSelect={id => go(`#/paper/${id}`)} onTest={() => go('#/test')} />
+            <Paper accountId={route.id} onSelect={id => go(`#/paper/${id}`)} />
           ) : route.page === 'test' ? (
             <TestBot key={`${route.bot ?? 'none'}-${aiVersion}`} initialBot={route.bot}
               onPaperCreated={id => go(`#/paper/${id}`)} onBuild={() => go('#/build')} />

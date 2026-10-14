@@ -57,8 +57,9 @@ export function Build({ health, onOpen, onTest }: {
   return (
     <div className="page">
       <header className="page-head">
-        <h1>Build your own</h1>
-        <p className="lede">Describe a trading idea in plain words, or upload a file that describes one. You get exact buy and sell rules that you can read, edit and test. Nothing you upload is ever run.</p>
+        <p className="kicker">Rule bots</p>
+        <h1>Build a bot</h1>
+        <p className="lede">Describe a trading idea in plain words, or upload a file that describes one. You get a rule bot: exact buy and sell rules that you can read, edit and test. Nothing you upload is ever run.</p>
       </header>
 
       <section className="compose" aria-label="Describe an idea">
@@ -92,9 +93,9 @@ export function Build({ health, onOpen, onTest }: {
       </section>
 
       <section className="library" aria-labelledby="lib-h">
-        <h2 id="lib-h">Your strategies</h2>
+        <h2 id="lib-h">Your bots</h2>
         {list === null ? <p className="field-note">Loading…</p> : list.length === 0 ? (
-          <p className="field-note">None yet. Strategies you draft appear here with their saved versions.</p>
+          <p className="field-note">None yet. Bots you draft appear here with their saved versions.</p>
         ) : (
           <table className="strategy-table">
             <thead><tr><th scope="col">Name</th><th scope="col">Status</th><th scope="col">Last changed</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>

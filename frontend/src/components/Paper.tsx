@@ -8,8 +8,11 @@ import { ResultDetail } from './Results'
 
 const HIDDEN = new Set(['tradingagents'])
 const CALL = { BUY: 'Buy', SELL: 'Sell', HOLD: 'Hold' } as const
-const NEWS_KINDS = ['ai-news', 'ai-crew']
-const CALLS: Record<string, number> = { 'ai-news': 1, 'ai-crew': 3 }
+const NEWS_KINDS = ['ai-agent', 'ai-news', 'ai-crew']
+const CALLS: Record<string, number> = { 'ai-agent': 5, 'ai-news': 1, 'ai-crew': 3 }
+/** Accounts followed by an AI agent (everything else follows a rule bot or a saved strategy). */
+const AI_IDS = new Set(['purple-agent', 'tradingagents-original', 'tradingagents', 'news-pulse', 'crew-nse'])
+export const isAgentAccount = (a: { agent_id: string }) => AI_IDS.has(a.agent_id)
 const autoKey = (id: string) => `purple.autoDecide.${id}`
 const readAuto = (id: string) => { try { return localStorage.getItem(autoKey(id)) === '1' } catch { return false } }
 const writeAuto = (id: string, on: boolean) => { try { localStorage.setItem(autoKey(id), on ? '1' : '0') } catch { /* private mode */ } }
@@ -93,12 +96,12 @@ function useMarketStatus(on: boolean) {
 function todayLine(v: PaperView) {
   const a = v.today.action
   const next = v.interval && v.interval !== '1d' ? "the next bar's" : "the next trading day's"
-  if (!a) return 'The agent has not decided the latest bar yet.'
+  if (!a) return 'The agent has not decided the latest day yet.'
   if (a === 'HOLD') return 'No trade: keep the account as it is.'
   return a === 'BUY' ? `It would buy at ${next} opening price.` : `It would sell at ${next} opening price.`
 }
 
-export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onSelect: (id: string) => void; onTest: () => void }) {
+export function Paper({ accountId, onSelect }: { accountId?: string; onSelect: (id: string) => void }) {
   const [accounts, setAccounts] = useState<PaperAccount[] | null>(null)
   const [view, setView] = useState<PaperView | null>(null)
   const [busy, setBusy] = useState(false)
@@ -154,11 +157,11 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
       <div className="page">
         <header className="page-head">
           <h1>Paper accounts</h1>
-          <p className="lede">A paper account follows a bot forward with virtual money, one trading day at a time, so you can see how it behaves on days it has not seen.</p>
+          <p className="lede">A paper account follows the AI agent or a rule bot forward with virtual money, so you can see how it does on days it has not seen. No real orders.</p>
         </header>
         <div className="empty">
-          <p>No paper accounts yet. Test a bot first; if the verdict looks promising, start a paper account from there.</p>
-          <button className="btn primary" onClick={onTest}>Test a bot</button>
+          <p>No paper accounts yet. Ask the agent about a stock, or test a rule bot, then start a paper account from the result.</p>
+          <div className="head-actions"><a className="btn primary" href="#/agent">Ask the agent</a><a className="btn" href="#/test">Test a rule bot</a></div>
         </div>
       </div>
     )
@@ -167,6 +170,8 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
   const m = view?.result.metrics
   const isAI = view && view.agent.kind !== 'rules'
   const vs = m ? m.total_return_pct - m.buy_hold_return_pct : 0
+  const who = isAI ? 'Agent' : 'Bot'
+  const latest = view?.decisions.length ? view.decisions[view.decisions.length - 1] : null
   const tone = (v: number) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '')
 
   return (
@@ -174,24 +179,32 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
       <header className="page-head row">
         <div>
           <h1>Paper accounts</h1>
-          <p className="lede">Each account follows one bot with virtual money. Move it forward a day at a time and see what the bot did and why.</p>
+          <p className="lede">Each account follows the AI agent or one rule bot with virtual money and shows every call it made and why.</p>
         </div>
-        <div className="head-actions"><button className="btn primary" onClick={onTest}>Test another bot</button></div>
+        <div className="head-actions"><a className="btn primary" href="#/agent">Ask the agent</a><a className="btn" href="#/test">Test a rule bot</a></div>
       </header>
 
       <div className="trade-grid">
         <nav className="panel watch" aria-label="Paper accounts">
           <h2 className="panel-title">Accounts</h2>
-          <ul className="watch-list">
-            {(accounts ?? []).map(a => (
-              <li key={a.id}>
-                <button className={`watch-row ${a.id === accountId ? 'on' : ''}`} aria-current={a.id === accountId ? 'page' : undefined} onClick={() => onSelect(a.id)}>
-                  <span className="watch-name">{a.name}</span>
-                  <span className="watch-meta">Since {a.start_date}{a.synthetic ? ', sample prices' : ''}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          {([['agent', 'Followed by the AI agent'], ['bot', 'Followed by a rule bot']] as const).map(([g, title]) => {
+            const list = (accounts ?? []).filter(a => isAgentAccount(a) === (g === 'agent'))
+            return list.length > 0 && (
+              <div key={g} className="watch-group">
+                <p className="watch-legend">{title}</p>
+                <ul className="watch-list">
+                  {list.map(a => (
+                    <li key={a.id}>
+                      <button className={`watch-row ${a.id === accountId ? 'on' : ''}`} aria-current={a.id === accountId ? 'page' : undefined} onClick={() => onSelect(a.id)}>
+                        <span className="watch-name">{a.name}</span>
+                        <span className="watch-meta">Since {a.start_date}{a.synthetic ? ', sample prices' : ''}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          })}
         </nav>
 
         <section className="trade-main" aria-label="Account">
@@ -200,7 +213,7 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
             <>
               <div className="panel account-bar">
                 <div className="instrument-id">
-                  <p className="sub">{view.agent.title}</p>
+                  <p className="sub"><span className={`badge ${isAI ? 'ok' : ''}`}>{isAI ? 'AI agent' : 'Rule bot'}</span> {view.agent.title}</p>
                   <h2 className="instrument-title">{view.account.name}</h2>
                   <p className="sub">Opened {view.account.start_date} with {fmtMoney(view.account.capital)}. Prices up to {view.latest_date}.</p>
                 </div>
@@ -231,10 +244,13 @@ export function Paper({ accountId, onSelect, onTest }: { accountId?: string; onS
           {!view ? <p className="field-note">Choose an account.</p> : (
             <>
               <section className={`today ${(view.today.action ?? 'none').toLowerCase()}`} aria-label="Latest decision">
-                <p className="today-label">{view.today.date.length > 10 ? `Bot's call after the ${view.today.date.slice(11)} bar (${view.today.date.slice(0, 10)})` : `Bot's call after the close on ${view.today.date}`}</p>
+                <p className="today-label">{view.today.date.length > 10 ? `${who}'s call after the ${view.today.date.slice(11)} bar (${view.today.date.slice(0, 10)})` : `${who}'s call after the close on ${view.today.date}`}</p>
                 <p className="today-call">{view.today.action ? CALL[view.today.action] : 'Not decided'}</p>
                 <p className="today-line">{todayLine(view)}</p>
                 {view.today.reason && <p className="today-reason">{view.today.reason}</p>}
+                {latest?.risk_plan && (view.today.action === 'BUY' || position(view).startsWith('Holding')) && (
+                  <p className="today-reason">Stop-loss ₹{latest.risk_plan.stop} ({latest.risk_plan.stop_pct}%) · target ₹{latest.risk_plan.target} (+{latest.risk_plan.target_pct}%)</p>
+                )}
               </section>
               <p className="position">{position(view)}</p>
 

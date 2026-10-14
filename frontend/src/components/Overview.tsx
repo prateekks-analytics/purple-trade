@@ -5,6 +5,7 @@ import type { Holding } from '../lib/portfolio'
 import { fmtMoney, fmtPct } from '../lib/tree'
 import { LineChart } from './LineChart'
 import { Spark } from './Charts'
+import { isAgentAccount } from './Paper'
 
 interface Board { bot: SuperAgentInfo; result: BacktestResult | null }
 
@@ -56,13 +57,30 @@ export function Overview({ portfolio, total }: {
       <header className="page-head row">
         <div>
           <h1>Overview</h1>
-          <p className="lede">Your paper accounts and how the built-in bots have done on recent prices.</p>
-        </div>
-        <div className="head-actions">
-          <a className="btn" href="#/build">Build a strategy</a>
-          <a className="btn primary" href="#/test">Test a bot</a>
+          <p className="lede">Two ways to decide on a stock, and one place to practise with virtual money.</p>
         </div>
       </header>
+
+      <div className="start-grid">
+        <section className="panel start-card agent" aria-labelledby="st-agent">
+          <p className="kicker">AI agent</p>
+          <h2 id="st-agent">Ask for a Buy, Hold or Sell call</h2>
+          <p>Name an NSE stock. The agent reads prices, news, trader posts and the company's financials, debates bull vs bear, and makes one call with a stop-loss. About a minute.</p>
+          <div className="head-actions"><a className="btn primary" href="#/agent">Ask the agent</a></div>
+        </section>
+        <section className="panel start-card" aria-labelledby="st-bots">
+          <p className="kicker">Rule bots</p>
+          <h2 id="st-bots">Test fixed trading rules</h2>
+          <p>A bot follows exact rules, such as "buy when SMA 50 crosses above SMA 200". No AI: test it instantly on past prices, or build your own from an idea.</p>
+          <div className="head-actions"><a className="btn" href="#/test">Test a bot</a><a className="btn quiet" href="#/build">Build a bot</a></div>
+        </section>
+        <section className="panel start-card" aria-labelledby="st-paper">
+          <p className="kicker">Practice</p>
+          <h2 id="st-paper">Follow one with virtual money</h2>
+          <p>Start a paper account from the agent's call or a bot's test. It trades on live NSE prices after each session, with every call explained. No real orders.</p>
+          <div className="head-actions"><a className="btn" href="#/paper">Paper accounts</a></div>
+        </section>
+      </div>
 
       <div className="grid-2">
         <section className="panel equity-panel" aria-labelledby="eq-h">
@@ -83,8 +101,8 @@ export function Overview({ portfolio, total }: {
               area height={220} ariaLabel="Combined value of all paper accounts" format={v => fmtMoney(v)} />
           ) : (
             <div className="empty-chart">
-              <p>{portfolio === null ? 'Loading accounts…' : portfolio.length ? 'The chart starts after the accounts move forward a day.' : 'No paper accounts yet. Test a bot, then follow it with virtual money.'}</p>
-              {portfolio !== null && !portfolio.length && <a className="btn primary" href="#/test">Test a bot</a>}
+              <p>{portfolio === null ? 'Loading accounts…' : portfolio.length ? 'The chart starts after the accounts move forward a day.' : 'No paper accounts yet. Ask the agent or test a bot, then follow it with virtual money.'}</p>
+              {portfolio !== null && !portfolio.length && <a className="btn primary" href="#/agent">Ask the agent</a>}
             </div>
           )}
         </section>
@@ -101,7 +119,7 @@ export function Overview({ portfolio, total }: {
                 return (
                   <li key={account.id}>
                     <a href={`#/paper/${account.id}`}>
-                      <span className="acct-name"><b>{account.name}</b><span className="sub">Since {account.start_date}</span></span>
+                      <span className="acct-name"><b>{account.name}</b><span className="sub">{isAgentAccount(account) ? 'AI agent' : 'Rule bot'} · since {account.start_date}</span></span>
                       <Spark values={view?.result.equity.map(e => e.equity) ?? []} width={72} height={26} label={`${account.name} value trend`} />
                       <span className="acct-num">
                         <b className="num">{m ? fmtMoney(m.end_equity) : '—'}</b>
@@ -120,7 +138,7 @@ export function Overview({ portfolio, total }: {
       <section className="panel" aria-labelledby="lb-h">
         <div className="panel-head">
           <div>
-            <h2 id="lb-h" className="panel-title">Bot leaderboard</h2>
+            <h2 id="lb-h" className="panel-title">Rule bot leaderboard</h2>
             <p className="field-note">Rule bots replayed on {stock || '…'}{dataset ? ` (${dataset.first_date} to ${dataset.last_date})` : ''}, with fees and slippage. Holding the stock returned {holdBH === undefined ? '…' : fmtPct(holdBH)}.</p>
           </div>
           {datasets.length > 1 && (

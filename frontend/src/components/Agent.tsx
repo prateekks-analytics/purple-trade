@@ -121,7 +121,11 @@ export function Agent({ health, onPaperCreated }: { health: Health | null; onPap
     return first === i ? 'working' : 'waiting'
   }
   const stepOut = (id: string): string | null => {
-    if (!d) return null
+    if (!d) {  // while running: what each finished step logged
+      const kinds: Record<string, string[]> = { market: ['analyst'], news: ['research'], social: [], fundamentals: ['financial'], debate: ['bull', 'bear'] }
+      const text = (kinds[id] ?? []).map(k => log.find(l => l.kind === k)?.text).filter(Boolean).join('\n\n')
+      return text || null
+    }
     const st = d.steps ?? {}
     if (id === 'market') return st.market ?? null
     if (id === 'news') return st.news || null

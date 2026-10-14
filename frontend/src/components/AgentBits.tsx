@@ -50,7 +50,7 @@ export function JobProgress({ job, label, note }: { job: Job; label: string; not
   )
 }
 
-type Decision = Pick<TeamDecision, 'date' | 'action' | 'confidence' | 'rating' | 'reason' | 'bull' | 'bear' | 'report'>
+type Decision = Pick<TeamDecision, 'date' | 'action' | 'confidence' | 'rating' | 'reason' | 'bull' | 'bear' | 'report' | 'steps' | 'risks' | 'risk_plan'>
 
 /** roles: headings for the two arguments (bull/bear for the debate team; research/financial for the crew). */
 export function DecisionLog({ decisions, roles = ['Bull case', 'Bear case'] }: { decisions: Decision[]; roles?: [string, string] }) {
@@ -64,7 +64,21 @@ export function DecisionLog({ decisions, roles = ['Bull case', 'Bear case'] }: {
             <span className="sub">{d.rating ? `Rated ${d.rating}` : `${Math.round(d.confidence * 100)}% confident`}</span>
           </div>
           <p>{d.reason || 'No reason given.'}</p>
-          {(d.bull || d.bear || d.report) && (
+          {d.steps ? (
+            <details>
+              <summary>Read every step: analysts, debate and what the agent read</summary>
+              <dl className="step-list">
+                {d.steps.news && <div><dt>News</dt><dd>{d.steps.news}</dd></div>}
+                {d.steps.social && <div><dt>Trader posts</dt><dd>{d.steps.social}</dd></div>}
+                {d.steps.fundamentals && <div><dt>Financials{d.steps.health ? ` (${d.steps.health})` : ''}</dt><dd>{d.steps.fundamentals}</dd></div>}
+                {d.bull && <div><dt>Bull case</dt><dd>{d.bull}</dd></div>}
+                {d.bear && <div><dt>Bear case</dt><dd>{d.bear}</dd></div>}
+                {d.risks && <div><dt>What would prove it wrong</dt><dd>{d.risks}</dd></div>}
+                {d.risk_plan && <div><dt>Stop-loss / target</dt><dd>₹{d.risk_plan.stop} ({d.risk_plan.stop_pct}%) / ₹{d.risk_plan.target} (+{d.risk_plan.target_pct}%)</dd></div>}
+              </dl>
+              <pre className="report">{d.report}</pre>
+            </details>
+          ) : (d.bull || d.bear || d.report) && (
             <details>
               <summary>{d.bull || d.bear ? 'Read the arguments and what the agent read' : 'Read what the agent read'}</summary>
               {(d.bull || d.bear) && (
