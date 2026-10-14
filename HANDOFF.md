@@ -7,6 +7,28 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026)
 
+**Agent vs bot split (15 Oct, late; commits cd07db6, a7bb2c8, ecf6461; not pushed)**
+- Wording everywhere: **AI agent** = an AI that researches a stock and makes a call; **rule bot** = fixed indicator
+  rules, no AI. Sidebar groups: Overview · AI agent (Ask the agent `#/agent`) · Rule bots (Test a bot `#/test`, Build a
+  bot `#/build`) · Practice (Paper accounts). Overview opens with a three-card "start here" row.
+- **Purple Research Agent** (`purple-agent`, kind `ai-agent`, `live_agents.agent_decider`): market analyst (code) →
+  news & trader-posts analyst (1 AI call) → fundamentals analyst (1) → bull (1) → bear (1) → risk manager (1) gives
+  action + plain view + confidence + "what would prove it wrong"; stop-loss/target = close ∓ 2×/3× ATR (code). Analysts
+  can be switched off (fewer calls). Daily paper accounts only; the live loop decides them with the server's free AI.
+- `POST /api/agent/call {agent_id, symbol, analyses, holding, fresh}` → job with one call on the latest completed
+  session (+ live delayed quote in the report while the session runs); cached per agent/AI/analysts/dataset/position.
+  Works for `tradingagents-original` too (Agent page radio "Original TradingAgents").
+- Agent page: ask panel (stock, own it?, checks, agent) → six-step pipeline filling live → call card (Buy / Wait /
+  Avoid / Hold / Sell from the person's point of view) → What next: start a paper account, or check the last 3/5/10 days.
+- Hidden from the UI but still runnable (old accounts, tests): News & Social Pulse, Stock Analysis Crew, Analyst Team
+  (`hidden: true` in the catalog). Test a rule bot no longer contains any AI-agent code.
+- Verified 15 Oct: 81 tests pass; tsc clean; dist rebuilt; real call on free Gemini: RELIANCE → "Wait" (view HOLD, 70%),
+  all six steps filled, ~1.5 min. Checked at 1366 px and 375 px (no sideways scroll). Paper-account creation from the
+  Agent page and the past-days check were NOT clicked live (backend tests cover them).
+- `.claude/launch.json` has `purple-check` (port 8781, serves built `frontend/dist`, live loop off) because another
+  chat's `purple-api`/`purple-web` held 8780/5173. Restart `purple-api` before using the new endpoint on 8780.
+
+
 **Live and shared**
 - Web demo: https://purple-trade.onrender.com (Render free plan, auto-deploys on push to GitHub `main`; sleeps when
   idle, ~1 min wake, data wiped on restart; shared-demo banner shown via `PURPLE_HOSTED=1` in `Dockerfile`).

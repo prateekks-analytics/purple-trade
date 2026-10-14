@@ -19,16 +19,19 @@ your own ideas or files into rules, and to run AI agents.
 
 ## What you can do
 
-- **Test a bot**: pick a ready-made bot or your own strategy, choose a stock and period, run a backtest,
+Two paths, never mixed: an **AI agent** researches a stock and makes a call; a **rule bot** follows fixed rules.
+
+- **Ask the agent** (AI agent): name an NSE stock. The Purple Research Agent checks price and indicators, news, trader
+  posts and the company's annual figures, runs a bull vs bear debate, and a risk manager gives Buy, Hold or Sell with a
+  stop-loss, a target and what would prove it wrong. Then follow it in a paper account or check it on past days.
+- **Test a bot** (rule bots): pick a ready-made bot or one you built, choose a stock and period, run a backtest,
   and read what the result means.
-- **Build your own**: describe an idea in plain words (or upload a file) and get exact rules you can edit.
+- **Build a bot**: describe an idea in plain words (or upload a file) and get exact rules you can edit.
 - **Paper accounts**: follow a bot day by day with virtual money. On a real NSE stock (Add a stock → Get live
   prices) the account shows the live price (Yahoo Finance, about 15 minutes delayed) and moves forward by itself
   after each trading session closes. Rule bots can also trade **every 5, 15 or 30 minutes** during market hours
   (live 5-minute bars, about 15 minutes late); Purple keeps fetching bars while it runs, even with the page closed.
-- **News agents**: *News & Social Pulse* reads Google News and Reddit trader posts about the stock and trades on the
-  mood; *Stock Analysis Crew (NSE)* (research analyst → financial analyst → investment advisor) is an India version of
-  the crewAI stock-analysis example. Both use the AI you connect; free tiers limit how many calls you can make.
+
 
 Your strategies and paper accounts are saved on your computer in `%LOCALAPPDATA%\PurpleTrade`.
 The original TradingAgents agent needs a separate developer install and is not part of the download.
