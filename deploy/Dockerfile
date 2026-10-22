@@ -1,6 +1,6 @@
-# Purple Desk on a private Hugging Face Space (Docker). The bot trades every 30 minutes while the Space is awake.
-# Free Spaces have no persistent disk: the server restores and backs up its database and the coach playbook in a
-# private dataset (purple_api/hfsync.py). Secrets to set in the Space settings: GOOGLE_API_KEY, HF_TOKEN (write).
+# Purple Desk online (Render free web service, or a Docker host). The bot trades every 30 minutes while awake.
+# Free hosts have no persistent disk: the server restores and backs up its database and the coach playbook in a
+# private Hugging Face dataset (purple_api/hfsync.py). Env: GOOGLE_API_KEY, HF_TOKEN, PURPLE_PASSWORD (see render.yaml).
 FROM node:22-slim AS ui
 WORKDIR /ui
 COPY frontend/package.json frontend/package-lock.json ./
@@ -21,4 +21,4 @@ ENV PURPLE_DIST=/app/frontend/dist PURPLE_DB=/data/purple/purple.sqlite3 PURPLE_
 RUN mkdir -p /data/purple/coach && cp /app/seed/playbook.md /data/purple/coach/ && chown -R user /data/purple
 USER user
 EXPOSE 7860
-CMD ["uvicorn", "--factory", "purple_api.main:create_app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["sh", "-c", "uvicorn --factory purple_api.main:create_app --host 0.0.0.0 --port ${PORT:-7860}"]

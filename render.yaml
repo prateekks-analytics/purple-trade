@@ -1,0 +1,24 @@
+# Render Blueprint for the private Purple Desk bot (New → Blueprint → this repo). The public demo service
+# (purple-trade, root Dockerfile) is separate and not managed here. Values marked sync:false are typed in the
+# Render dashboard, never committed.
+services:
+  - type: web
+    name: purple-desk
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./deploy/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: HF_TOKEN
+        sync: false
+      - key: PURPLE_PASSWORD
+        sync: false
+      - key: PURPLE_STATE_REPO
+        value: Prat8118/purple-desk-state
+      - key: PURPLE_STATE_SYNC
+        value: "1"

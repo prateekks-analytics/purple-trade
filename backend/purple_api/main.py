@@ -1,14 +1,16 @@
 """Purple Trade API."""
 from __future__ import annotations
 
+import base64
 import os
+import secrets
 import threading
 from contextlib import asynccontextmanager
 
 from pathlib import Path, PurePath
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
@@ -64,6 +66,21 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
             sync.tick(force=True)  # last backup before the Space restarts
 
     app = FastAPI(title="Purple Trade", version="0.1.0", lifespan=lifespan)
+
+    password = os.environ.get("PURPLE_PASSWORD", "")
+    if password:  # a private online bot: the browser asks once (any user name, this password); health stays open
+        @app.middleware("http")
+        async def gate(request: Request, call_next):
+            if request.url.path == "/api/health":
+                return await call_next(request)
+            auth = request.headers.get("authorization", "")
+            try:
+                given = base64.b64decode(auth[6:]).decode().partition(":")[2] if auth.startswith("Basic ") else ""
+            except ValueError:
+                given = ""
+            if not secrets.compare_digest(given.encode(), password.encode()):
+                return Response("Password needed", status_code=401, headers={"WWW-Authenticate": 'Basic realm="Purple Desk"'})
+            return await call_next(request)
     db = store or default_store()
     app.state.store = db
     app.state.provider = provider or ai.default_provider()

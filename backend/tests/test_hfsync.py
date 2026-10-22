@@ -90,4 +90,23 @@ def test_space_stage_copies_code_but_no_private_files(tmp_path):
             "frontend/package-lock.json", "frontend/src/App.tsx", "coach/playbook.md"} <= set(files)
     assert not any(f.startswith(("backend/data", "frontend/node_modules", "frontend/dist")) or f.endswith(".env")
                    for f in files)
-    assert (tmp_path / "stage" / "README.md").read_text(encoding="utf-8").startswith("---\ntitle: Purple Desk")
+    assert "Purple Desk online" in (tmp_path / "stage" / "README.md").read_text(encoding="utf-8")
+
+
+def test_password_gate(monkeypatch):
+    import base64
+
+    from fastapi.testclient import TestClient
+
+    from purple_api.main import create_app
+    from test_api import FakeProvider
+    monkeypatch.setenv("PURPLE_PASSWORD", "s3cret")
+    c = TestClient(create_app(store=Store(":memory:"), provider=FakeProvider()))
+    assert c.get("/api/health").status_code == 200  # the keep-awake ping needs no password
+    r = c.get("/api/desk")
+    assert r.status_code == 401 and "Basic" in r.headers["www-authenticate"]
+    bad = base64.b64encode(b"me:wrong").decode()
+    assert c.get("/api/desk", headers={"Authorization": f"Basic {bad}"}).status_code == 401
+    assert c.get("/api/desk", headers={"Authorization": "Basic !!!"}).status_code == 401
+    ok = base64.b64encode(b"anyone:s3cret").decode()
+    assert c.get("/api/desk", headers={"Authorization": f"Basic {ok}"}).status_code == 200

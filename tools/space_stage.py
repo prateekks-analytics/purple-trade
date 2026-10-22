@@ -20,8 +20,8 @@ def stage(out: Path) -> list[str]:
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
-    shutil.copy(ROOT / "space" / "Dockerfile", out / "Dockerfile")
-    shutil.copy(ROOT / "space" / "README.md", out / "README.md")
+    shutil.copy(ROOT / "deploy" / "Dockerfile", out / "Dockerfile")
+    shutil.copy(ROOT / "deploy" / "README.md", out / "README.md")
     (out / "backend").mkdir()
     shutil.copy(ROOT / "backend" / "pyproject.toml", out / "backend" / "pyproject.toml")
     shutil.copytree(ROOT / "backend" / "purple_api", out / "backend" / "purple_api", ignore=SKIP)
