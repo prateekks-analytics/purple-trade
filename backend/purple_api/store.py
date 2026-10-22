@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS market_bars (
   open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, volume REAL NOT NULL,
   PRIMARY KEY (symbol, interval, ts)
 );
+CREATE TABLE IF NOT EXISTS desk_bots (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, capital REAL NOT NULL, days INTEGER NOT NULL DEFAULT 0,
+  start_time TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'running', created_at TEXT NOT NULL
+);
 """
 
 
@@ -283,6 +287,23 @@ class Store:
         rows = self._q("SELECT ts,open,high,low,close,volume FROM market_bars WHERE symbol=? AND interval=? ORDER BY ts",
                        (symbol, interval)).fetchall()
         return [Bar(*tuple(r)) for r in rows]
+
+    # ----- the portfolio bot (desk); its decisions, moods and lessons live in agent_decisions -----
+    def add_desk(self, name: str, capital: float, days: int, start_time: str) -> dict:
+        did = _id()
+        self._q("INSERT INTO desk_bots(id,name,capital,days,start_time,status,created_at) VALUES(?,?,?,?,?,'running',?)",
+                (did, name, capital, days, start_time, _now()))
+        return self.get_desk(did)
+
+    def get_desk(self, did: str) -> dict | None:
+        r = self._q("SELECT * FROM desk_bots WHERE id=?", (did,)).fetchone()
+        return dict(r) if r else None
+
+    def list_desks(self) -> list[dict]:
+        return [dict(r) for r in self._q("SELECT * FROM desk_bots ORDER BY created_at DESC").fetchall()]
+
+    def set_desk_status(self, did: str, status: str):
+        self._q("UPDATE desk_bots SET status=? WHERE id=?", (status, did))
 
     def latest_dataset_for(self, symbol: str) -> dict | None:
         r = self._q("SELECT id FROM datasets WHERE symbol=? AND synthetic=0 ORDER BY last_date DESC, created_at DESC LIMIT 1",

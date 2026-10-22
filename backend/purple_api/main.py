@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
-from . import agents, ai, superagent_routes
+from . import agents, ai, desk_routes, superagent_routes
 from .ai import providers as ai_providers
 from .envfile import load_env
 from .csvdata import CsvError, parse_csv
@@ -51,6 +51,7 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
             def run():
                 while not stop.wait(60):
                     app.state.live_tick()
+                    app.state.desk_tick()
             threading.Thread(target=run, name="purple-live", daemon=True).start()
         yield
         stop.set()
@@ -327,6 +328,7 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
         return {"id": r["id"], **r["result"]}
 
     superagent_routes.register(app, db)
+    desk_routes.register(app, db)
 
     # ----- frontend (production build) -----
     dist = Path(os.environ.get("PURPLE_DIST") or Path(__file__).resolve().parents[2] / "frontend" / "dist")
