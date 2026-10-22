@@ -60,13 +60,17 @@ class OllamaProvider:
         return r.json()["message"]["content"]
 
 
+HUNG_SKIP = 600.0  # seconds a Gemini model that timed out is skipped by later calls
+_HUNG: dict[str, float] = {}
+
+
 class GeminiProvider:
     """Google Gemini through the free-tier API key of whoever runs the app (GOOGLE_API_KEY). Text is sent to Google."""
 
     name = "gemini"
     URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-    def __init__(self, model: str | None = None, api_key: str | None = None, timeout: float = 120.0,
+    def __init__(self, model: str | None = None, api_key: str | None = None, timeout: float = 45.0,
                  fallback: str | None = None, retry_wait: float = 2.0):
         self.model = model or os.environ.get("PURPLE_GEMINI_MODEL", "gemini-3.8-flash")
         # used once when the main model is overloaded (503) — free-tier demand spikes are common
@@ -98,11 +102,24 @@ class GeminiProvider:
                          for m in messages],
             "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
         }
+        now = time.monotonic()
         attempts = [self.model, self.model, *self.fallbacks]
+        attempts = [m for m in attempts if _HUNG.get(m, 0) <= now] or attempts  # skip models that hung recently
+        timed_out: set[str] = set()
+        r = None
         for i, model in enumerate(attempts):
+            if model in timed_out:
+                continue
             try:
                 r = httpx.post(self.URL.format(model=model), json=body, timeout=self.timeout,
                                headers={"x-goog-api-key": self._key})
+            except httpx.TimeoutException as e:
+                # a model that hangs (seen 22 Oct 2026 on the newest free models) is skipped, not retried
+                timed_out.add(model)
+                _HUNG[model] = time.monotonic() + HUNG_SKIP
+                if i == len(attempts) - 1 or all(m in timed_out for m in attempts[i + 1:]):
+                    raise ProviderError("Google Gemini did not answer in time (free tier). Try again in a minute.") from e
+                continue
             except httpx.HTTPError as e:
                 raise ProviderError(f"Could not reach Google Gemini: {type(e).__name__}") from e
             if r.status_code not in (500, 503) or i == len(attempts) - 1:

@@ -19,6 +19,14 @@ your own ideas or files into rules, and to run AI agents.
 
 ## What you can do
 
+**Main goal: Beat the market** (`#/race`). Build a bot that stays ahead of NIFTY 50 for a week:
+1. **Replay past weeks**: pick a rule bot and a stock; Purple replays the last 24 weeks of 7 trading days, each
+   starting in cash with ₹1,00,000, and says how many weeks it beat NIFTY 50 (and how many plain cash would have won).
+2. **Improve it with AI**: the AI coach reads the losing weeks, changes the rules, the code replays them, and it tries
+   again (three tries, keeps only a change that wins more weeks). The newest 8 weeks are hidden from the coach and
+   show whether the change also works on weeks it never saw.
+3. **Race it live for 7 days**: paper money on real prices, your bot against the same amount in NIFTY 50.
+
 Two paths, never mixed: an **AI agent** researches a stock and makes a call; a **rule bot** follows fixed rules.
 
 - **Ask the agent** (AI agent): name an NSE stock. The Purple Research Agent checks price and indicators, news, trader

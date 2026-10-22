@@ -238,3 +238,62 @@ export interface MarketStatus {
 export interface Health { hosted?: boolean; ok: boolean; ai: { provider: string; model: string; available: boolean; detail: string } }
 
 export interface AiProvider { id: string; label: string; cost: string; key_url: string; default_model: string; needs_key: boolean }
+
+// ----- beat the market -----
+export interface ChallengeWeek {
+  start: string
+  end: string
+  bot_pct: number
+  market_pct: number
+  edge_rupees: number
+  beat: boolean
+  trades: number
+  in_market: boolean
+}
+
+export interface ChallengeSummary {
+  weeks: number
+  beat: number
+  avg_edge: number
+  total_edge: number
+  idle_weeks?: number
+  cash_beat?: number
+  capital?: number
+  verdict: string
+}
+
+export interface ChallengeCard {
+  weeks: ChallengeWeek[]
+  summary: ChallengeSummary
+  learn: ChallengeSummary
+  unseen: ChallengeSummary
+  describe: { entry: string; exit: string }
+  strategy: Strategy
+  symbol: string
+  market: string
+  week_sessions: number
+}
+
+export interface CoachTry { change: string; beat: number; weeks: number; unseen_beat: number; unseen_weeks: number }
+export interface CoachResult { before: ChallengeCard; after: ChallengeCard | null; tries: CoachTry[] }
+
+export interface Race {
+  id: string
+  name: string
+  agent: { id: string; title: string; kind: string }
+  symbol: string
+  start: string
+  days: number
+  day: number
+  finished: boolean
+  capital: number
+  bot_value: number
+  market_value: number | null
+  edge: number | null
+  headline: string
+  series: { date: string; bot: number; market: number | null }[]
+  live_at: string | null
+  today: { date: string; action: 'BUY' | 'SELL' | 'HOLD' | null; reason: string }
+  holding: { qty: number; since: string; price: number } | null
+  trades: { entry_date: string; exit_date: string | null; entry_price: number; exit_price: number | null; qty: number; pnl: number; exit_reason: string }[]
+}

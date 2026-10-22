@@ -25,6 +25,7 @@ export const IconBolt = () => <svg {...P}><path d="M13 2L4 14h7l-1 8 9-12h-7z" /
 export const IconTrend = () => <svg {...P}><path d="M3 17l6-6 4 4 8-8" /><path d="M15 7h6v6" /></svg>
 export const IconUser = () => <svg {...P}><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
 export const IconUpload = () => <svg {...P}><path d="M12 15V3M7 8l5-5 5 5" /><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" /></svg>
+export const IconFlag = () => <svg {...P}><path d="M5 21V4" /><path d="M5 4h11l-2 4 2 4H5" /></svg>
 export const IconPlay = () => <svg {...P}><path d="M7 4v16l13-8z" /></svg>
 export const IconPlus = () => <svg {...P}><path d="M12 5v14M5 12h14" /></svg>
 export const IconArrow = () => <svg {...P}><path d="M5 12h14M13 6l6 6-6 6" /></svg>

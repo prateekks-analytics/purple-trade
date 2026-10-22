@@ -5,7 +5,34 @@
 Read this first, then `purple/README.md`. Root `CLAUDE.md` section 1 describes the OLD root app — superseded; do not
 extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CIS repo).
 
-## Current state (15 Oct 2026)
+## Current state (15 Oct 2026; Beat the market added 22 Oct)
+
+**Beat the market: main goal (22 Oct 2026, commits after f359792; not pushed)**
+- User brief: main objective is to backtest a bot, improve it with AI agents, and show a bot that stays ahead of the
+  market for a 7-day period, then prove it with a real-time paper race for a week. Fewer numbers, more plain benefit.
+- New page `#/race` (`components/Challenge.tsx`), first nav item ("Main goal") and a banner at the top of Home.
+  Steps: pick a rule bot + stock → replay → AI coach → "Start the 7-day race" → race page `#/race/<paper id>`.
+- Backend `purple_api/challenge.py` + routes in `superagent_routes.py`:
+  `POST /api/challenge/replay {agent_id|strategy, symbol, weeks}`: last 24 non-overlapping weeks of WEEK=7 sessions,
+  each starting flat with ₹1,00,000 at a close (warm-up from earlier bars); market = NIFTY 50 (`^NSEI`) between the same
+  two closes. Summary: weeks beaten, average weekly ₹ edge, `cash_beat` (weeks NIFTY fell, which plain cash also wins),
+  idle weeks, verdict. Verdict checks idle/cash first, so a bot that never buys can't look "strong".
+  `POST /api/challenge/coach` (job, 3 AI calls): AI proposes a change via `ai.propose`, code replays, the next try sees
+  earlier tries; keeps the best by (weeks beaten, avg edge) on the older 16 weeks only; the newest 8 (HOLDOUT) are the
+  unseen check shown to the user. `POST /api/challenge/keep` saves an improved bot as strategy + version 1.
+  `POST/GET /api/challenge/races[/{id}?live=1]`: a race is a daily paper account with `race_days`=7 (new column, store
+  migration). The view caps at 7 sessions, NIFTY normalised to the same capital, live mark-to-market with Yahoo quotes
+  while NSE is open; prices re-downloaded at most every 10 min per symbol. Rule bots only (AI agents: 1 call per day).
+- Gemini fix: `GeminiProvider` timeout 120 → 45 s, a timed-out model is skipped (next fallback) and remembered for
+  10 min (`_HUNG`). On 22 Oct gemini-3.8-flash and 3.7-flash hung (even "Say OK"); 3.5-flash answered in ~6 s.
+- Real data (RELIANCE, 24 weeks to 21 Oct): every built-in bot sat in cash most weeks (Golden Cross never bought; Fast
+  EMA idle 19/24) and "won" mainly because NIFTY fell; plain cash would have won 16 weeks. The coach turned Fast EMA 10
+  into EMA 5: 15 → 16 of 24, unseen weeks 5 → 5. So no bot is clearly ahead yet; this is the honest starting point.
+- Live race started 22 Oct 06:30 IST from the UI: "Fast EMA Momentum + Trend Filter (AI coached)" on RELIANCE, start
+  close 21 Oct, id a09b96537d8f (strategy saved as version 1). Day 1 = 22 Oct session.
+- Verified: 87 backend tests pass (`tests/test_challenge.py` + Gemini hang test), tsc + build clean, replay + coach +
+  keep + race clicked live on purple-check (8781, real Gemini); no sideways scroll at 375 px; tab bar now 6 columns.
+  NOT yet seen: a race with day ≥ 1 and the live (session-open) mark-to-market path; check after 09:15 IST.
 
 **Kite / Alpaca-style shell (16 Oct, early; frontend only; previous UI commit 140d63b)**
 - User benchmark: Zerodha Kite and Alpaca; wanted a hover-to-open sidebar instead of a fixed one.

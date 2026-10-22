@@ -262,6 +262,27 @@ def test_gemini_retries_then_falls_back(monkeypatch):
     assert [("main" if "main-model" in u else "spare") for u in urls] == ["main", "main", "spare"]
 
 
+def test_gemini_skips_a_model_that_hangs(monkeypatch):
+    import httpx
+    from purple_api.ai import providers as pv
+    urls = []
+    def fake_post(url, json, timeout, headers):
+        urls.append(url)
+        if "spare-model" not in url:
+            raise httpx.ReadTimeout("slow")
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "{}"}]}}]})
+    monkeypatch.setattr(pv.httpx, "post", fake_post)
+    g = pv.GeminiProvider(model="main-model", api_key="k", fallback="slow-model,spare-model", retry_wait=0)
+    assert g.complete("s", [{"role": "user", "content": "x"}]) == "{}"
+    assert ["main" if "main-model" in u else "slow" if "slow" in u else "spare" for u in urls] == ["main", "slow", "spare"]
+    urls.clear()
+    assert g.complete("s", [{"role": "user", "content": "x"}]) == "{}" and len(urls) == 1  # hung models skipped for a while
+    pv._HUNG.clear()
+    g = pv.GeminiProvider(model="main-model", api_key="k", fallback="slow-model", retry_wait=0)
+    with pytest.raises(pv.ProviderError, match="did not answer in time"):
+        g.complete("s", [{"role": "user", "content": "x"}])
+
+
 def test_agents_route_with_gemini_drafting():
     from fastapi.testclient import TestClient
     from purple_api.main import create_app

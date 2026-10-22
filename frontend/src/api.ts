@@ -1,5 +1,5 @@
 import type {
-  AgentCall, AgentImport, AiProvider, MarketStatus, Quote, BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, Review, RunResponse, Strategy,
+  AgentCall, ChallengeCard, CoachResult, Race, AgentImport, AiProvider, MarketStatus, Quote, BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, Review, RunResponse, Strategy,
   StrategyDoc, StrategySummary, SuperAgentInfo, Template,
 } from './types'
 import { aiHeaders } from './lib/aiSettings'
@@ -91,6 +91,17 @@ export const api = {
   saPaperNextDay: (id: string) => req<PaperView>(`/api/superagent/paper/${id}/next-day`, json('POST')),
   saPaperDecide: (id: string) => req<{ kind: 'job'; job: Job }>(`/api/superagent/paper/${id}/decide`, json('POST')),
   saPaperDelete: (id: string) => req<{ ok: boolean }>(`/api/superagent/paper/${id}`, json('DELETE')),
+  // ----- beat the market -----
+  replay: (bot: { agent_id?: string; strategy?: Strategy }, symbol: string) =>
+    req<ChallengeCard>('/api/challenge/replay', json('POST', { ...bot, symbol })),
+  coach: (bot: { agent_id?: string; strategy?: Strategy }, symbol: string, hint = '') =>
+    req<{ kind: 'job'; job: Job<CoachResult> }>('/api/challenge/coach', json('POST', { ...bot, symbol, hint })),
+  keepBot: (strategy: Strategy, name = '') =>
+    req<{ agent_id: string; strategy_id: string; title: string }>('/api/challenge/keep', json('POST', { strategy, name })),
+  races: () => req<Race[]>('/api/challenge/races'),
+  race: (id: string, live = false) => req<Race>(`/api/challenge/races/${id}${live ? '?live=1' : ''}`),
+  startRace: (agent_id: string, symbol: string, capital = 100000) =>
+    req<Race>('/api/challenge/races', json('POST', { agent_id, symbol, capital })),
   saExport: (agent_id: string, symbol: string) =>
     req<{ filename: string; code: string }>(`/api/superagent/export?agent_id=${encodeURIComponent(agent_id)}&symbol=${encodeURIComponent(symbol)}`),
 }

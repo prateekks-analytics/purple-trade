@@ -74,6 +74,15 @@ export function Overview({ portfolio, total, onAsk, aiReady }: {
         <p className="sub">{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
       </header>
 
+      <a className="beat-banner" href="#/race">
+        <span className="beat-banner-copy">
+          <span className="kicker">Main goal</span>
+          <b>Build a bot that stays ahead of NIFTY 50 for a week</b>
+          <span className="sub">Replay past weeks, let the AI coach improve it, then race it live for 7 trading days.</span>
+        </span>
+        <span className="btn glow">Start</span>
+      </a>
+
       <section className="hero" aria-label="Ask the AI agent about a stock">
         <div className="hero-copy">
           <AskSentence value={ask} onChange={setAsk} onSubmit={() => ask && onAsk(ask)} id="hero-symbol" />

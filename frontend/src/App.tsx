@@ -4,7 +4,8 @@ import type { Health, Proposal } from './types'
 import { Agent } from './components/Agent'
 import { AiConnect } from './components/AiConnect'
 import { Build } from './components/Build'
-import { IconBuild, IconMoon, IconOverview, IconPaper, IconSpark, IconSun, IconTest, Logo } from './components/Icons'
+import { Challenge } from './components/Challenge'
+import { IconBuild, IconFlag, IconMoon, IconOverview, IconPaper, IconSpark, IconSun, IconTest, Logo } from './components/Icons'
 import { Overview } from './components/Overview'
 import { Palette } from './components/Palette'
 import { useQuotes } from './lib/quotes'
@@ -17,6 +18,7 @@ import { fmtMoney, fmtPct } from './lib/tree'
 
 type Route =
   | { page: 'overview' }
+  | { page: 'race'; id?: string }
   | { page: 'agent'; symbol?: string }
   | { page: 'test'; bot?: string }
   | { page: 'build' }
@@ -28,6 +30,8 @@ function parseRoute(): Route {
   let m = h.match(/^#\/s\/([\w-]+)/)
   if (m) return { page: 'strategy', id: m[1] }
   if (h.startsWith('#/build')) return { page: 'build' }
+  m = h.match(/^#\/race(?:\/([\w-]+))?/)
+  if (m) return { page: 'race', id: m[1] }
   m = h.match(/^#\/agent(?:\/([\w&.^-]+))?/)
   if (m) return { page: 'agent', symbol: m[1] }
   if (/^#\/test\/(purple-agent|tradingagents|news-pulse|crew-nse)/.test(h)) return { page: 'agent' }
@@ -42,6 +46,7 @@ const INDICES = [{ sym: '^NSEI', label: 'NIFTY 50' }, { sym: '^BSESN', label: 'S
 
 const SECTIONS = [
   { page: 'overview', hash: '#/', label: 'Home', short: 'Home', icon: <IconOverview />, group: '' },
+  { page: 'race', hash: '#/race', label: 'Beat the market', short: 'Race', icon: <IconFlag />, group: 'Main goal' },
   { page: 'agent', hash: '#/agent', label: 'Ask the agent', short: 'Agent', icon: <IconSpark />, group: 'AI agent' },
   { page: 'test', hash: '#/test', label: 'Test a bot', short: 'Bots', icon: <IconTest />, group: 'Rule bots' },
   { page: 'build', hash: '#/build', label: 'Build a bot', short: 'Build', icon: <IconBuild />, group: '' },
@@ -198,6 +203,8 @@ export default function App() {
             <Workspace key={`${route.id}-${aiVersion}`} id={route.id} initialIdea={idea} initialProposal={imported} health={health}
               onBack={() => { setIdea(undefined); setImported(undefined); go('#/build') }} onRenamed={() => {}}
               onTest={vid => go(`#/test/version:${vid}`)} />
+          ) : route.page === 'race' ? (
+            <Challenge key={aiVersion} health={health} raceId={route.id} onRace={id => go(id ? `#/race/${id}` : '#/race')} />
           ) : route.page === 'agent' ? (
             <Agent key={`${aiVersion}-${route.symbol ?? ''}`} health={health} initialSymbol={route.symbol} onPaperCreated={id => go(`#/paper/${id}`)} />
           ) : route.page === 'build' ? (
