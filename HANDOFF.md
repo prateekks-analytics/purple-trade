@@ -7,6 +7,16 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026; Beat the market added 22 Oct)
 
+**Daily coach in the cloud (22 Oct 2026, ~17:00 IST)**
+- Cloud routine trig_01SBtXHPFWDFrRSvKeRKSLL8 "Purple Desk daily coach (16:30 IST)": cron `0 11 * * 1-5` UTC, Sonnet 5.5,
+  Default cloud env, repo prateekks-analytics/purple-trade, no connectors. Needs `HF_TOKEN` in the environment (user
+  adds it). Follows `purple/coach/COACH.md` (shared instructions; paths relative to the purple folder).
+- Journal and reviews live in the dataset (`coach/journal.md`, `coach/reviews/`), playbook at `playbook.md` (the
+  bot syncs it). Whoever runs first writes today's journal entry; the other skips.
+- Desktop task `purple-desk-coach` is now the backup at 18:00 IST; `/coach-bot` points to COACH.md.
+- First review (22 Oct, laptop): company +0.30% vs NIFTY -0.54% vs twin +0.03%; 29 trades (~Rs 32 lakh turnover);
+  added trial R1 against churn (keep holdings unless the stock list changes; no same-day cash round trips).
+
 **Analyst company (22 Oct 2026, ~11:50 IST, commit f4ae831, live as 10a5e87)**
 - User asked for 10-15 bots with different behaviours and a manager that synthesises them like a company.
 - `desk.AGENTS` = 13 analysts with `team`: Price action (momentum, trend, dip, breakout, contrarian), Technical (tech:
