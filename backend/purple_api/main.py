@@ -60,6 +60,16 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
                     if sync:
                         sync.tick()
             threading.Thread(target=run, name="purple-live", daemon=True).start()
+        own_url = os.environ.get("RENDER_EXTERNAL_URL") if sync else None
+        if own_url:  # Render's free plan sleeps after 15 min without outside visits: visit ourselves every 10 min
+            def wake():
+                import httpx
+                while not stop.wait(600):
+                    try:
+                        httpx.get(own_url.rstrip("/") + "/api/health", timeout=30)
+                    except httpx.HTTPError:
+                        pass
+            threading.Thread(target=wake, name="purple-awake", daemon=True).start()
         yield
         stop.set()
         if sync:
