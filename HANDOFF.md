@@ -7,6 +7,27 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026; Beat the market added 22 Oct)
 
+**Analyst company (22 Oct 2026, ~11:50 IST, commit f4ae831, live as 10a5e87)**
+- User asked for 10-15 bots with different behaviours and a manager that synthesises them like a company.
+- `desk.AGENTS` = 13 analysts with `team`: Price action (momentum, trend, dip, breakout, contrarian), Technical (tech:
+  MACD 12/26/9 + Bollinger 20/2 + volume + RSI<70), Fundamentals (growth, quality from `deskfund` annual reports
+  fetched weekly for the 10 base stocks; longterm from daily bars), News & social (news = news mood + growth
+  tie-break; social = Reddit-post mood, scored apart from news in the same single mood call), Risk-takers (highbeta:
+  `leaders.risky`, 3 most volatile rising stocks of WIDE, picks per day in `deskrisky:` + bot id, only when NIFTY >=
+  its 30m EMA50), Defence (guard). Plus CORE (rule) in uptrends. `OLD_IDS` = the original five.
+- Context for analysts: `coach.context(db, bot, p)` (daily_context, fundamental_scores, social index, risky per bar).
+  Base analysts trade only `UNIVERSE`; highbeta trades its picks (fetched as extra panel symbols).
+- Manager: CHIEF_SYSTEM = portfolio manager; prompt groups analysts by team; returns targets (any panel symbol,
+  `parse_chief(..., allowed=)`), winner (lead) and `uses`; told not to chase two-day records. Prompt ~1.2k tokens.
+- Replay (no AI, 40/20/10 days): record-chase over 13 analysts -6.90%/-0.19%/+3.26% vs original five
+  -0.67%/+1.41%/+3.58% with ~2x trades. So the no-AI fallback judges only OLD_IDS and the backtest page shows OLD_IDS.
+- Old-bot twin: `coach.twin` (OLD_IDS, judge by record, no AI, from bot start) in `/api/desk` `twin` and the review
+  summary (`twin_pct`). `/coach-bot` step 3a: after 10 trading days, if the company trails the twin by >0.5 pts
+  since start, tell the user to go back to the original five.
+- Render deploys: the 11:35 deploy waited ~10 min between "Deploying" and server start (free tier); the old
+  instance keeps trading meanwhile. A decision made by the old instance in the overlap may be decided again by the
+  new one (same bar), which is harmless.
+
 **Core momentum strategy (22 Oct 2026, ~11:35 IST, commit 1b82261, live as 8ce69ee)**
 - Wide-universe lab (scratchpad only): 97 NSE large+mid caps, 5y daily Yahoo, long only, 8 bps/side, decide on close,
   fill next open. Picked on 2022-11..2024-10 (NIFTY +17%/yr), judged on 2024-10..2026-10 (NIFTY -3.3%/yr, unseen).
