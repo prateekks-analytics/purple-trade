@@ -1,0 +1,113 @@
+import { useState } from 'react'
+import { AgentMark, PortfolioChart, pct, signed, useBacktest, useDesk, when } from './DeskBits'
+
+/** How the bot thinks: its agents, the latest debates, the news mood, what it learned, and the replay. */
+export function BotBrain() {
+  const { view } = useDesk()
+  const { bt, error: btError } = useBacktest(40, view?.capital ?? 500000)
+  const [open, setOpen] = useState(0)
+  const decisions = view?.decisions ?? []
+  const mood = view?.mood
+
+  return (
+    <div className="page wide brain">
+      <header className="brain-head">
+        <p className="kicker">How the bot thinks</p>
+        <h1 className="launch-title">Five agents argue. <span className="grad">The best case trades.</span></h1>
+        <p className="launch-sub">Every 30 minutes each agent proposes a portfolio from the 10 stocks. The AI chief weighs their cases, the news and their recent results, picks a winner, and the bot trades it at the next bar.</p>
+      </header>
+
+      <section className="agent-grid" aria-label="Agents">
+        {(view?.agents ?? []).map(a => {
+          const pick = Object.keys(a.proposal ?? {})
+          return (
+            <article key={a.id} className="agent-card glass">
+              <div className="agent-top"><AgentMark id={a.id} size="lg" /><h2>{a.name}</h2></div>
+              <p className="sub">{a.style}</p>
+              <div className="agent-stats">
+                <span><small>Last 2 days</small><b className={`num ${(a.record_pct ?? 0) >= 0 ? 'pos' : 'neg'}`}>{a.record_pct == null ? '—' : pct(a.record_pct)}</b></span>
+                <span><small>Debates won</small><b className="num">{a.wins ?? 0}</b></span>
+              </div>
+              <p className="agent-pick">{view?.bot ? (pick.length ? <>Wants <b>{pick.join(', ')}</b></> : 'Wants cash') : ''}</p>
+            </article>
+          )
+        })}
+      </section>
+
+      <div className="dash-grid">
+        <section className="panel" aria-labelledby="deb-h">
+          <div className="panel-head"><h2 id="deb-h" className="panel-title">Debates</h2><span className="sub">{decisions.length ? `${decisions.length} recent` : ''}</span></div>
+          {decisions.length ? (
+            <ol className="debate-list">
+              {decisions.slice(0, 12).map((d, i) => (
+                <li key={d.time} className={open === i ? 'open' : ''}>
+                  <button className="debate-row" onClick={() => setOpen(open === i ? -1 : i)} aria-expanded={open === i}>
+                    <AgentMark id={d.winner} size="sm" /><b>{d.winner_name}</b><span className="sub">{when(d.time)}</span>
+                    <span className="debate-tg">{Object.keys(d.targets).join(', ') || 'cash'}</span>
+                  </button>
+                  {open === i && (
+                    <div className="debate-body">
+                      <p>{d.reason}</p>
+                      {d.debate.length > 0 && (
+                        <ul className="cases">
+                          {d.debate.map(c => <li key={c.agent} className={c.agent === d.winner ? 'won' : ''}><AgentMark id={c.agent} size="sm" /><span><b>{c.name}:</b> {c.case}</span></li>)}
+                        </ul>
+                      )}
+                      <p className="field-note">{d.by === 'record' ? 'Decided by track record (no AI answered).' : `Judged by ${d.by}.`}</p>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ol>
+          ) : <p className="pad">{view?.bot ? 'The first debate is running.' : 'Start the bot on the Dashboard to see its debates here.'}</p>}
+        </section>
+
+        <div className="stack">
+          <section className="panel" aria-labelledby="mood-h">
+            <div className="panel-head"><h2 id="mood-h" className="panel-title">News & social mood</h2>{mood && <span className="sub">{when(mood.time)}</span>}</div>
+            {mood ? (
+              <ul className="mood-list">
+                {Object.entries(mood.scores).sort((a, b) => b[1].score - a[1].score).map(([s, m]) => (
+                  <li key={s} title={m.why}>
+                    <b>{s}</b>
+                    <span className="mood-bar" aria-hidden="true"><i className={m.score >= 0 ? 'up' : 'down'} style={{ width: `${Math.abs(m.score) * 50}%`, [m.score >= 0 ? 'left' : 'right']: '50%' }} /></span>
+                    <span className="mood-why">{m.why}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="pad">Read every two hours from Google News and Reddit while the bot runs.</p>}
+          </section>
+          <section className="panel" aria-labelledby="learn-h">
+            <div className="panel-head"><h2 id="learn-h" className="panel-title">What it learned</h2></div>
+            {view?.lessons?.length
+              ? <ul className="lessons">{view.lessons.map((l, i) => <li key={i}>{l}</li>)}</ul>
+              : <p className="pad">After each trading day the AI reviews the results and writes lessons the chief uses the next day.</p>}
+          </section>
+        </div>
+      </div>
+
+      <section className="panel" aria-labelledby="bt-h">
+        <div className="panel-head">
+          <div>
+            <h2 id="bt-h" className="panel-title">Backtest: the last 40 trading days</h2>
+            {bt && <p className="sub">{when(bt.from)} to {when(bt.to)} · {bt.trades} trades · {bt.note}</p>}
+          </div>
+        </div>
+        {bt ? (
+          <div className="bt-body">
+            <div className="bt-stats">
+              <span><small>Bot</small><b className={`num ${bt.return_pct >= 0 ? 'pos' : 'neg'}`}>{pct(bt.return_pct)}</b></span>
+              <span><small>NIFTY 50</small><b className={`num ${bt.market_pct >= 0 ? 'pos' : 'neg'}`}>{pct(bt.market_pct)}</b></span>
+              <span><small>Difference on {bt.capital >= 100000 ? `₹${(bt.capital / 100000).toLocaleString('en-IN')} lakh` : 'start'}</small><b className={`num ${bt.edge >= 0 ? 'pos' : 'neg'}`}>{signed(bt.edge)}</b></span>
+              <span><small>7-day windows ahead</small><b className="num">{bt.weeks_beat} of {bt.weeks.length}</b></span>
+            </div>
+            <PortfolioChart series={bt.series} height={240} label="Bot (replay)" />
+            <div className="bt-agents">
+              {bt.agents.map(a => <span key={a.id}><AgentMark id={a.id} size="sm" />{a.name}<b className={`num ${a.return_pct >= 0 ? 'pos' : 'neg'}`}>{pct(a.return_pct)}</b><small>picked {a.picked}×</small></span>)}
+            </div>
+          </div>
+        ) : <p className="pad">{btError || 'Replaying the last 40 trading days…'}</p>}
+      </section>
+    </div>
+  )
+}

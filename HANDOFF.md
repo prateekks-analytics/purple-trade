@@ -7,7 +7,40 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026; Beat the market added 22 Oct)
 
-**Beat the market: main goal (22 Oct 2026, commits after f359792; not pushed)**
+**Purple Desk: the main product (22 Oct 2026, later the same day; not pushed)**
+- User brief: home = one AI trading bot. Start with an amount (default ₹5,00,000), it paper-trades on its own every
+  30 minutes (buy/sell/hold), for 7 days, 30 days or until stopped; dashboard like a trading app (portfolio vs NIFTY,
+  what it bought and sold, holdings). Agents debate, the winner's plan trades, the bot learns from news, social and
+  results. Old single-stock tools out of sight. Look: light, clean, futuristic accents. User picked "AI every 30 min".
+- Universe: 10 large NSE stocks (`desk.UNIVERSE`), long only, whole shares, fees 3 bps + slippage 5 bps per side,
+  max 35% per stock, rebalances under 4% skipped. 30-minute Yahoo bars (`market_bars`, interval '30m').
+- `purple_api/desk.py`: five strategist agents in code (Momentum, Trend rider, Dip buyer, News & social, Risk guard)
+  each propose target weights per bar; every agent runs a shadow portfolio = its track record. AI chief
+  (`CHIEF_SYSTEM`, 1 call per bar) hears all cases + two-day records + news mood + lessons, returns debate, winner,
+  targets, plain reason; `parse_chief` validates (unknown symbols dropped, caps). No AI → `judge` picks the best
+  two-day record. Mood: 1 AI call every 2 h over Google News + Reddit headlines (`MOOD_SYSTEM`). Lessons: 1 AI call
+  after the close (`LESSON_SYSTEM`), fed to the chief. About 18 AI calls per trading day.
+- `purple_api/desk_routes.py`: `GET/POST /api/desk`, `POST /api/desk/stop`, `POST /api/desk/decide`,
+  `GET /api/desk/backtest?days=40&capital=`. `app.state.desk_tick` runs in the main live loop (60 s; decides the newest
+  completed bar once, skips missed older bars, 09:45-16:15 IST weekdays). Table `desk_bots`; decisions, moods and
+  lessons in `agent_decisions` under `desk:`, `deskmood:`, `desklesson:` + bot id. Only downloads hold the lock (an
+  earlier version froze the dashboard while the AI debated).
+- Backtest (no AI, judge by record), real data to 21 Oct: 40 days bot −0.96% vs NIFTY −6.02% (+₹25,285 on ₹5 lakh,
+  4 of 5 weeks ahead); 55 days −2.95% vs −7.11%, ahead in both halves. Most of the edge came from cash and dip-buying
+  in a falling market; Momentum and Trend lost money in this period. Tuned only the judge window (2 days kept).
+- Gemini: 429 now also falls through to the next model (each has its own free quota; skipped 120 s). Live chief
+  call verified (13 s, full five-agent debate). Earlier the same day the newest models hung or hit the daily limit.
+- Frontend: nav = Dashboard `#/` (`Dashboard.tsx`: launch with amount/duration + replay proof; running: value, vs
+  NIFTY, status, performance chart with trade markers, latest decision, holdings with live quotes, trades), Bot `#/bot`
+  (`BotBrain.tsx`: agent cards, debates, mood, lessons, backtest), More `#/more` (`More.tsx`: Ask the agent, Test/Build
+  a rule bot, Beat the market, Paper accounts, classic home `#/classic`). Default theme light. Header wallet removed.
+- Verified: 95 tests pass; tsc + build clean; launch → start → first decision on a scratch DB (`purple-desk-test`,
+  port 8782, `%TEMP%\purple-desk-test.sqlite3`, live loop on); 375 px no sideways scroll. NOT yet seen: trades and
+  chart markers during market hours, the lessons call, a full 7-day run. The user's real DB has no desk bot yet.
+- To run it for real the server must stay up during market hours with the live loop on (`purple-api` config, port
+  8780, or the exe after a rebuild); `purple-check` has the loop off.
+
+**Beat the market: single-stock (22 Oct 2026, commits after f359792; now under More)**
 - User brief: main objective is to backtest a bot, improve it with AI agents, and show a bot that stays ahead of the
   market for a 7-day period, then prove it with a real-time paper race for a week. Fewer numbers, more plain benefit.
 - New page `#/race` (`components/Challenge.tsx`), first nav item ("Main goal") and a banner at the top of Home.

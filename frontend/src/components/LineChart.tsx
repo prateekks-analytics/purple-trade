@@ -16,7 +16,8 @@ interface Props {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 /** Day and month for short spans, month and year for long ones. */
-function tickLabel(iso: string, n: number) {
+function tickLabel(iso: string, n: number, multiDay = false) {
+  if (iso.length > 10 && multiDay) return `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`
   if (iso.length > 10) return iso.slice(11, 16) === '09:15' ? `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}` : iso.slice(11, 16)
   const [y, m, d] = iso.split('-')
   const mon = MONTHS[Number(m) - 1] ?? m
@@ -41,6 +42,7 @@ export function LineChart({ dates, series, markers = [], height = 240, format, a
   const [hover, setHover] = useState<number | null>(null)
   const [width, setWidth] = useState(720)
   const n = dates.length
+  const multiDay = n > 1 && dates[0].length > 10 && dates[0].slice(0, 10) !== dates[n - 1].slice(0, 10) && n > 30
 
   useEffect(() => {
     const el = ref.current
@@ -126,7 +128,7 @@ export function LineChart({ dates, series, markers = [], height = 240, format, a
           <line x1={PAD.left} x2={width - PAD.right} y1={y(baseline)} y2={y(baseline)} className="baseline" />
         )}
         {dateTicks.map(({ d, i }) => (
-          <text key={d} x={x(i)} y={height - 8} className="axis-label" textAnchor="middle">{tickLabel(d, n)}</text>
+          <text key={d} x={x(i)} y={height - 8} className="axis-label" textAnchor="middle">{tickLabel(d, n, multiDay)}</text>
         ))}
         {area && series[0] && n > 1 && (
           <path d={`${path(series[0].values)}L${x(n - 1)},${height - PAD.bottom}L${x(0)},${height - PAD.bottom}Z`} fill={series[0].color} className="area" />

@@ -1,5 +1,5 @@
 import type {
-  AgentCall, ChallengeCard, CoachResult, Race, AgentImport, AiProvider, MarketStatus, Quote, BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, Review, RunResponse, Strategy,
+  AgentCall, DeskBacktest, DeskView, ChallengeCard, CoachResult, Race, AgentImport, AiProvider, MarketStatus, Quote, BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, Review, RunResponse, Strategy,
   StrategyDoc, StrategySummary, SuperAgentInfo, Template,
 } from './types'
 import { aiHeaders } from './lib/aiSettings'
@@ -91,6 +91,12 @@ export const api = {
   saPaperNextDay: (id: string) => req<PaperView>(`/api/superagent/paper/${id}/next-day`, json('POST')),
   saPaperDecide: (id: string) => req<{ kind: 'job'; job: Job }>(`/api/superagent/paper/${id}/decide`, json('POST')),
   saPaperDelete: (id: string) => req<{ ok: boolean }>(`/api/superagent/paper/${id}`, json('DELETE')),
+  // ----- the portfolio bot -----
+  desk: () => req<DeskView>('/api/desk'),
+  deskStart: (capital: number, days: number) => req<DeskView>('/api/desk', json('POST', { capital, days })),
+  deskStop: () => req<DeskView>('/api/desk/stop', json('POST')),
+  deskDecide: () => req<DeskView>('/api/desk/decide', json('POST')),
+  deskBacktest: (days = 40, capital = 500000) => req<DeskBacktest>(`/api/desk/backtest?days=${days}&capital=${capital}`),
   // ----- beat the market -----
   replay: (bot: { agent_id?: string; strategy?: Strategy }, symbol: string) =>
     req<ChallengeCard>('/api/challenge/replay', json('POST', { ...bot, symbol })),

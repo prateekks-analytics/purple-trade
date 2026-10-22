@@ -61,6 +61,7 @@ class OllamaProvider:
 
 
 HUNG_SKIP = 600.0  # seconds a Gemini model that timed out is skipped by later calls
+LIMIT_SKIP = 120.0  # seconds a rate-limited (429) model is skipped
 _HUNG: dict[str, float] = {}
 
 
@@ -122,6 +123,12 @@ class GeminiProvider:
                 continue
             except httpx.HTTPError as e:
                 raise ProviderError(f"Could not reach Google Gemini: {type(e).__name__}") from e
+            if r.status_code == 429:  # each model has its own free quota: skip this one for a while, try the next
+                timed_out.add(model)
+                _HUNG[model] = time.monotonic() + LIMIT_SKIP
+                if i == len(attempts) - 1 or all(m in timed_out for m in attempts[i + 1:]):
+                    break
+                continue
             if r.status_code not in (500, 503) or i == len(attempts) - 1:
                 break
             time.sleep(self.retry_wait)

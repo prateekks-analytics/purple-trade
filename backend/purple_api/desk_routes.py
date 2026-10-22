@@ -26,6 +26,15 @@ class StartIn(BaseModel):
     days: int = Field(7, ge=0, le=365)  # trading days; 0 = until stopped
 
 
+def inr(v: float) -> str:
+    """12,34,567 (Indian digit grouping)."""
+    n = str(int(round(v)))
+    head, tail = n[:-3], n[-3:]
+    while len(head) > 2:
+        tail, head = head[-2:] + "," + tail, head[:-2]
+    return f"{head},{tail}" if head else tail
+
+
 def _ist(t: str) -> datetime:
     return datetime.strptime(t, "%Y-%m-%d %H:%M").replace(tzinfo=market.IST)
 
@@ -57,9 +66,13 @@ def register(app: FastAPI, db: Store):
     # ----- data -----
     def fetch(range_: str, max_age: float) -> None:
         """Download 30-minute bars for the basket and NIFTY 50 at most every `max_age` seconds per range."""
-        if time.time() - state["fetched"].get(range_, 0) < max_age:
-            return
-        state["fetched"][range_] = time.time()
+        with lock:
+            if time.time() - state["fetched"].get(range_, 0) < max_age:
+                return
+            state["fetched"][range_] = time.time()
+            _download(range_)
+
+    def _download(range_: str) -> None:
         for s in SYMBOLS:
             try:
                 db.upsert_bars(s, desk.INTERVAL, market.intraday_bars(s, desk.INTERVAL, range_))
@@ -208,18 +221,17 @@ def register(app: FastAPI, db: Store):
             return
         state["busy"] = True
         try:
-            with lock:
-                p = panel() if db.get_market_bars(desk.MARKET, desk.INTERVAL) else None
-                if p is None or stale(p, now):
-                    fetch("1d", 50)
-                    p = panel()
-                step(bot, now)
-                if finished(bot, p) and bot["days"]:
-                    db.set_desk_status(bot["id"], "finished")
-                day = ist.date().isoformat()
-                if hm >= (15, 50) and (bot["id"], day) not in state["lessons_done"]:
-                    state["lessons_done"].add((bot["id"], day))
-                    learn(bot, panel(), day)
+            p = panel() if db.get_market_bars(desk.MARKET, desk.INTERVAL) else None
+            if p is None or stale(p, now):
+                fetch("1d", 50)
+                p = panel()
+            step(bot, now)
+            if finished(bot, p) and bot["days"]:
+                db.set_desk_status(bot["id"], "finished")
+            day = ist.date().isoformat()
+            if hm >= (15, 50) and (bot["id"], day) not in state["lessons_done"]:
+                state["lessons_done"].add((bot["id"], day))
+                learn(bot, panel(), day)
         except Exception as e:  # noqa: BLE001 - the loop never dies; the error shows in the UI
             state["last_error"] = f"{type(e).__name__}: {str(e)[:200]}"
         finally:
@@ -277,22 +289,20 @@ def register(app: FastAPI, db: Store):
         bot = running() or next(iter(db.list_desks()), None)
         if not bot:
             return {"bot": None, "agents": desk.AGENTS, "universe": [desk.short(s) for s in desk.UNIVERSE]}
-        with lock:
-            p = panel() if db.get_market_bars(desk.MARKET, desk.INTERVAL) else None
-            if bot["status"] == "running" and (p is None or stale(p, datetime.now(market.IST))):
-                fetch("1d", 60)
+        p = panel() if db.get_market_bars(desk.MARKET, desk.INTERVAL) else None
+        if bot["status"] == "running" and (p is None or stale(p, datetime.now(market.IST))):
+            fetch("1d", 60)
         return view(bot)
 
     @app.post("/api/desk")
     def desk_start(body: StartIn):
-        with lock:
-            for b in db.list_desks():
-                if b["status"] == "running":
-                    db.set_desk_status(b["id"], "stopped")
-            fetch("1mo", 300)
-            p = panel()
-            days = f"{body.days} trading days" if body.days else "open-ended"
-            bot = db.add_desk(f"Purple Desk · ₹{body.capital:,.0f} · {days}", body.capital, body.days, p.times[-1])
+        for b in db.list_desks():
+            if b["status"] == "running":
+                db.set_desk_status(b["id"], "stopped")
+        fetch("1mo", 300)
+        p = panel()
+        days = f"{body.days} trading days" if body.days else "open-ended"
+        bot = db.add_desk(f"Purple Desk · ₹{inr(body.capital)} · {days}", body.capital, body.days, p.times[-1])
         threading.Thread(target=lambda: _safe_step(bot), daemon=True).start()  # first decision without blocking
         return view(bot)
 
@@ -301,8 +311,7 @@ def register(app: FastAPI, db: Store):
             return
         state["busy"] = True
         try:
-            with lock:
-                step(db.get_desk(bot["id"]), datetime.now(market.IST), force)
+            step(db.get_desk(bot["id"]), datetime.now(market.IST), force)
         except Exception as e:  # noqa: BLE001
             state["last_error"] = f"{type(e).__name__}: {str(e)[:200]}"
         finally:
@@ -322,8 +331,7 @@ def register(app: FastAPI, db: Store):
         bot = running()
         if not bot:
             raise HTTPException(404, "No bot is running.")
-        with lock:
-            fetch("1d", 60)
+        fetch("1d", 60)
         _safe_step(bot)
         return view(db.get_desk(bot["id"]))
 
@@ -335,9 +343,8 @@ def register(app: FastAPI, db: Store):
         hit = state["backtest"]
         if hit and hit[0] == key and time.time() - hit[1] < BACKTEST_TTL:
             return hit[2]
-        with lock:
-            fetch("60d", BACKTEST_TTL)
-            p = panel()
+        fetch("60d", BACKTEST_TTL)
+        p = panel()
         start = max(5 * desk.BARS_PER_DAY, len(p) - days * desk.BARS_PER_DAY)
         bt = desk.backtest(p, capital, start)
         m0 = p.market[start].close

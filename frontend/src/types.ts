@@ -297,3 +297,56 @@ export interface Race {
   holding: { qty: number; since: string; price: number } | null
   trades: { entry_date: string; exit_date: string | null; entry_price: number; exit_price: number | null; qty: number; pnl: number; exit_reason: string }[]
 }
+
+// ----- the portfolio bot (desk) -----
+export interface DeskAgent { id: string; name: string; style: string; record_pct?: number | null; wins?: number; proposal?: Record<string, number> }
+export interface DeskTrade { time: string; symbol: string; side: 'BUY' | 'SELL'; qty: number; price: number; value: number; why: string }
+export interface DeskHolding { symbol: string; qty: number; price: number; value: number; avg: number | null }
+export interface DeskDecision {
+  time: string
+  winner: string
+  winner_name: string
+  reason: string
+  by: string | null
+  targets: Record<string, number>
+  debate: { agent: string; name: string; case: string }[]
+  confidence: number | null
+}
+export interface DeskBot { id: string; name: string; capital: number; days: number; start_time: string; status: 'running' | 'stopped' | 'finished'; created_at: string }
+export interface DeskView {
+  bot: DeskBot | null
+  agents: DeskAgent[]
+  universe: string[]
+  value?: number
+  cash?: number
+  capital?: number
+  return_pct?: number
+  market_pct?: number
+  edge?: number
+  day?: number
+  series?: { time: string; value: number; market: number }[]
+  trades?: DeskTrade[]
+  holdings?: DeskHolding[]
+  decisions?: DeskDecision[]
+  mood?: { time: string; scores: Record<string, { score: number; why: string }> } | null
+  lessons?: string[]
+  data_time?: string
+  next_decision?: string | null
+  ai?: boolean
+  last_error?: string | null
+  market_name?: string
+}
+export interface DeskBacktest {
+  from: string
+  to: string
+  capital: number
+  return_pct: number
+  market_pct: number
+  edge: number
+  trades: number
+  series: { time: string; value: number; market: number }[]
+  weeks: { start: string; end: string; bot_pct: number; market_pct: number; edge: number; beat: boolean }[]
+  weeks_beat: number
+  agents: { id: string; name: string; return_pct: number; picked: number }[]
+  note: string
+}

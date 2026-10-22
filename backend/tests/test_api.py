@@ -337,3 +337,20 @@ def test_browser_connected_ai_is_used_per_request(monkeypatch):
     engines = {e["id"]: e for e in next(a for a in c.get("/api/superagent/agents", headers={"X-AI-Provider": "gemini", "X-AI-Key": "g"}).json()
                                          if a["kind"] == "ta-original")["engines"]}
     assert engines["gemini-flash"]["available"]
+
+
+def test_gemini_rate_limit_tries_next_model(monkeypatch):
+    import httpx
+    from purple_api.ai import providers as pv
+    urls = []
+    def fake_post(url, json, timeout, headers):
+        urls.append(url)
+        if "main-model" in url:
+            return httpx.Response(429, json={"error": {"code": 429}})
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "{}"}]}}]})
+    monkeypatch.setattr(pv.httpx, "post", fake_post)
+    pv._HUNG.clear()
+    g = pv.GeminiProvider(model="main-model", api_key="k", fallback="spare-model", retry_wait=0)
+    assert g.complete("s", [{"role": "user", "content": "x"}]) == "{}"
+    assert ["main" if "main-model" in u else "spare" for u in urls] == ["main", "spare"]
+    pv._HUNG.clear()

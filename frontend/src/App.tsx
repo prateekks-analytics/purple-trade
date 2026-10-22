@@ -4,8 +4,11 @@ import type { Health, Proposal } from './types'
 import { Agent } from './components/Agent'
 import { AiConnect } from './components/AiConnect'
 import { Build } from './components/Build'
+import { BotBrain } from './components/BotBrain'
 import { Challenge } from './components/Challenge'
-import { IconBuild, IconFlag, IconMoon, IconOverview, IconPaper, IconSpark, IconSun, IconTest, Logo } from './components/Icons'
+import { Dashboard } from './components/Dashboard'
+import { More } from './components/More'
+import { IconBolt, IconMoon, IconOverview, IconSpark, IconSun, Logo } from './components/Icons'
 import { Overview } from './components/Overview'
 import { Palette } from './components/Palette'
 import { useQuotes } from './lib/quotes'
@@ -14,9 +17,11 @@ import { TestBot } from './components/TestBot'
 import { Workspace } from './components/Workspace'
 import { getAi, onAiChange } from './lib/aiSettings'
 import { nseStatus, totals, usePortfolio } from './lib/portfolio'
-import { fmtMoney, fmtPct } from './lib/tree'
 
 type Route =
+  | { page: 'dashboard' }
+  | { page: 'bot' }
+  | { page: 'more' }
   | { page: 'overview' }
   | { page: 'race'; id?: string }
   | { page: 'agent'; symbol?: string }
@@ -30,6 +35,9 @@ function parseRoute(): Route {
   let m = h.match(/^#\/s\/([\w-]+)/)
   if (m) return { page: 'strategy', id: m[1] }
   if (h.startsWith('#/build')) return { page: 'build' }
+  if (h.startsWith('#/bot')) return { page: 'bot' }
+  if (h.startsWith('#/more')) return { page: 'more' }
+  if (h.startsWith('#/classic')) return { page: 'overview' }
   m = h.match(/^#\/race(?:\/([\w-]+))?/)
   if (m) return { page: 'race', id: m[1] }
   m = h.match(/^#\/agent(?:\/([\w&.^-]+))?/)
@@ -39,23 +47,22 @@ function parseRoute(): Route {
   if (m) return { page: 'paper', id: m[1] }
   m = h.match(/^#\/test(?:\/([\w:-]+))?/)
   if (m) return { page: 'test', bot: m[1] }
-  return { page: 'overview' }
+  return { page: 'dashboard' }
 }
 
 const INDICES = [{ sym: '^NSEI', label: 'NIFTY 50' }, { sym: '^BSESN', label: 'SENSEX' }]
 
+const IconMore = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.5" /><rect x="14" y="4" width="6" height="6" rx="1.5" /><rect x="4" y="14" width="6" height="6" rx="1.5" /><rect x="14" y="14" width="6" height="6" rx="1.5" /></svg>
+
 const SECTIONS = [
-  { page: 'overview', hash: '#/', label: 'Home', short: 'Home', icon: <IconOverview />, group: '' },
-  { page: 'race', hash: '#/race', label: 'Beat the market', short: 'Race', icon: <IconFlag />, group: 'Main goal' },
-  { page: 'agent', hash: '#/agent', label: 'Ask the agent', short: 'Agent', icon: <IconSpark />, group: 'AI agent' },
-  { page: 'test', hash: '#/test', label: 'Test a bot', short: 'Bots', icon: <IconTest />, group: 'Rule bots' },
-  { page: 'build', hash: '#/build', label: 'Build a bot', short: 'Build', icon: <IconBuild />, group: '' },
-  { page: 'paper', hash: '#/paper', label: 'Paper accounts', short: 'Paper', icon: <IconPaper />, group: 'Practice' },
+  { page: 'dashboard', hash: '#/', label: 'Dashboard', short: 'Dashboard', icon: <IconOverview />, group: '' },
+  { page: 'bot', hash: '#/bot', label: 'How the bot thinks', short: 'Bot', icon: <IconBolt />, group: '' },
+  { page: 'more', hash: '#/more', label: 'More tools', short: 'More', icon: <IconMore />, group: '' },
 ] as const
 
 function initialTheme(): 'light' | 'dark' {
   try { const t = localStorage.getItem('purple.theme'); if (t === 'light' || t === 'dark') return t } catch { /* ignore */ }
-  return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  return 'light'
 }
 
 export default function App() {
@@ -66,11 +73,9 @@ export default function App() {
   const [aiOpen, setAiOpen] = useState(false)
   const [aiVersion, setAiVersion] = useState(0)
   const [theme, setTheme] = useState(initialTheme)
-  const [tick, setTick] = useState(0)
+  const [, setTick] = useState(0)
   const [palette, setPalette] = useState(false)
   const idx = useQuotes(INDICES.map(i => i.sym))
-  const portfolio = usePortfolio(`${route.page}-${tick}`)
-  const sum = totals(portfolio)
   const market = nseStatus()
 
   useEffect(() => {
@@ -116,7 +121,7 @@ export default function App() {
 
   const go = (hash: string) => { if (location.hash !== hash) location.hash = hash; else setRoute(parseRoute()) }
   const open = (sid: string, initial?: string, proposal?: Proposal) => { setIdea(initial); setImported(proposal); go(`#/s/${sid}`) }
-  const section = route.page === 'strategy' ? 'build' : route.page
+  const section = route.page === 'dashboard' || route.page === 'bot' ? route.page : 'more'
   const ai = getAi()
 
   useEffect(() => {
@@ -131,7 +136,7 @@ export default function App() {
         <nav className="side-nav">
           {SECTIONS.map(s => [
             s.group && <span key={`g-${s.page}`} className="side-group">{s.group}</span>,
-            <a key={s.page} href={s.hash} title={s.label} className={`${section === s.page ? 'on' : ''} ${s.page === 'agent' ? 'hot' : ''}`} aria-current={section === s.page ? 'page' : undefined}>
+            <a key={s.page} href={s.hash} title={s.label} className={`${section === s.page ? 'on' : ''}`} aria-current={section === s.page ? 'page' : undefined}>
               {s.icon}<span>{s.label}</span>
             </a>,
           ])}
@@ -153,7 +158,7 @@ export default function App() {
 
       <nav className="tabbar" aria-label="Sections">
         {SECTIONS.map(s => (
-          <a key={s.page} href={s.hash} className={`${section === s.page ? 'on' : ''} ${s.page === 'agent' ? 'hot' : ''}`} aria-current={section === s.page ? 'page' : undefined}>
+          <a key={s.page} href={s.hash} className={`${section === s.page ? 'on' : ''}`} aria-current={section === s.page ? 'page' : undefined}>
             {s.icon}<span>{s.short}</span>
           </a>
         ))}
@@ -179,13 +184,6 @@ export default function App() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
             <span>Search eg: infy, golden cross</span><kbd>Ctrl K</kbd>
           </button>
-          <a className="wallet" href="#/paper" title="All paper accounts together">
-            <span className="wallet-label">Paper money</span>
-            <b className="num">{sum ? fmtMoney(sum.value) : '—'}</b>
-            <span className={`wallet-chg num ${sum && sum.change > 0 ? 'pos' : sum && sum.change < 0 ? 'neg' : ''}`}>
-              {sum ? `${sum.change >= 0 ? '+' : '−'}${fmtMoney(Math.abs(sum.change))} (${fmtPct(sum.changePct)})` : ''}</span>
-            <span className="wallet-count">{portfolio ? `${portfolio.length} account${portfolio.length === 1 ? '' : 's'}` : ''}</span>
-          </a>
           <span className={`market ${market.open ? 'open' : 'closed'}`} title="Regular NSE session, Monday to Friday 09:15–15:30 IST. Holidays not checked.">
             <i aria-hidden /><span>{market.label}<span className="market-time">, {market.time}</span></span>
           </span>
@@ -199,7 +197,13 @@ export default function App() {
           <p className="hosted-note">Shared online demo: strategies and paper accounts saved here are visible to other visitors and are wiped when the server restarts. For private use, download the Windows app.</p>
         )}
         <main id="main" className="main" tabIndex={-1}>
-          {route.page === 'strategy' ? (
+          {route.page === 'dashboard' ? (
+            <Dashboard />
+          ) : route.page === 'bot' ? (
+            <BotBrain />
+          ) : route.page === 'more' ? (
+            <More />
+          ) : route.page === 'strategy' ? (
             <Workspace key={`${route.id}-${aiVersion}`} id={route.id} initialIdea={idea} initialProposal={imported} health={health}
               onBack={() => { setIdea(undefined); setImported(undefined); go('#/build') }} onRenamed={() => {}}
               onTest={vid => go(`#/test/version:${vid}`)} />
@@ -215,10 +219,16 @@ export default function App() {
             <TestBot key={`${route.bot ?? 'none'}-${aiVersion}`} initialBot={route.bot}
               onPaperCreated={id => go(`#/paper/${id}`)} onBuild={() => go('#/build')} />
           ) : (
-            <Overview portfolio={portfolio} total={sum} onAsk={sym => go(`#/agent/${sym}`)} aiReady={Boolean(health?.ai.available)} />
+            <Classic onAsk={sym => go(`#/agent/${sym}`)} aiReady={Boolean(health?.ai.available)} />
           )}
         </main>
       </div>
     </div>
   )
+}
+
+/** The earlier home page (watchlist, ask-the-agent hero, rule-bot leaderboard), now under More. */
+function Classic(props: { onAsk: (symbol: string) => void; aiReady: boolean }) {
+  const portfolio = usePortfolio('classic')
+  return <Overview portfolio={portfolio} total={totals(portfolio)} {...props} />
 }

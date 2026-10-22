@@ -19,7 +19,16 @@ your own ideas or files into rules, and to run AI agents.
 
 ## What you can do
 
-**Main goal: Beat the market** (`#/race`). Build a bot that stays ahead of NIFTY 50 for a week:
+**Main product: Purple Desk** (Dashboard). Start the AI trading bot with an amount (default ₹5,00,000) for 7 days,
+30 days or until you stop it. Every 30 minutes five agents (Momentum, Trend rider, Dip buyer, News & social, Risk
+guard) each propose a portfolio from 10 large NSE stocks; an AI chief hears their cases, the news and social mood and
+their recent results, picks the winner, and the bot paper-trades it at the next bar. The Dashboard shows the
+portfolio against NIFTY 50, every buy and sell, holdings and the latest decision; "How the bot thinks" shows the
+agents, debates, mood, daily lessons and a 40-day backtest. Keep Purple running during market hours.
+
+Under **More**: the single-stock tools below.
+
+**Beat the market, single stock** (`#/race`). Build a bot that stays ahead of NIFTY 50 for a week:
 1. **Replay past weeks**: pick a rule bot and a stock; Purple replays the last 24 weeks of 7 trading days, each
    starting in cash with ₹1,00,000, and says how many weeks it beat NIFTY 50 (and how many plain cash would have won).
 2. **Improve it with AI**: the AI coach reads the losing weeks, changes the rules, the code replays them, and it tries
