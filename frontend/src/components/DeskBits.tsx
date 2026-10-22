@@ -50,12 +50,14 @@ export const pct = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(
 export const clock = (t: string) => t.slice(11, 16)
 export const dayLabel = (t: string) => new Date(`${t.slice(0, 10)}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 export const when = (t: string) => `${dayLabel(t)}, ${clock(t)}`
-/** Decisions are stored under the 30-minute bar they read; they are made when that bar closes, 30 minutes later. */
-export const decidedAt = (t: string) => {
+/** Bars are stored by their start time; their close (when a decision is made and a price is final) is 30 minutes
+ * later, and never after the 15:30 market close. */
+export const barClose = (t: string) => {
   const [h, m] = t.slice(11, 16).split(':').map(Number)
-  const mins = h * 60 + m + 30
-  return `${dayLabel(t)}, ${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`
+  const mins = Math.min(h * 60 + m + 30, 15 * 60 + 30)
+  return `${t.slice(0, 11)}${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`
 }
+export const decidedAt = (t: string) => when(barClose(t))
 
 /** Portfolio against NIFTY 50 on the same money, with a marker for every bar in which the bot traded. */
 export function PortfolioChart({ series, trades = [], height = 300, label = 'Your bot' }: {
@@ -75,7 +77,7 @@ export function PortfolioChart({ series, trades = [], height = 300, label = 'You
     label: ts.map(t => `${t.side === 'BUY' ? 'Bought' : 'Sold'} ${t.qty} ${t.symbol}`).join(', '),
   }))
   return (
-    <LineChart dates={series.map(s => s.time)} height={height} format={v => fmtMoney(v)} baseline={series[0]?.market}
+    <LineChart dates={series.map(s => barClose(s.time))} height={height} format={v => fmtMoney(v)} baseline={series[0]?.market}
       ariaLabel={`${label} against NIFTY 50`} markers={markers}
       series={[{ key: 'bot', label, color: 'var(--series-1)', values: series.map(s => s.value) },
         { key: 'mkt', label: 'NIFTY 50, same money', color: 'var(--series-2)', values: series.map(s => s.market), dashed: true }]} />
