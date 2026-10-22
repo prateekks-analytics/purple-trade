@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from purple_api import desk, desk_routes, market, news
+from purple_api import coach, desk, desk_routes, market, news
 from purple_api.main import create_app
 from purple_api.sample import synthetic_bars
 from purple_api.store import Store
@@ -118,3 +118,142 @@ def test_without_ai_the_track_record_decides(client):
 def test_backtest_endpoint(client):
     r = client(FakeProvider()).get("/api/desk/backtest?days=10").json()
     assert r["capital"] == 500000 and len(r["agents"]) == 5 and r["series"] and "weeks_beat" in r
+
+
+# ---------- Claude coaches the bot ----------
+
+PLAYBOOK = """# playbook
+## R1 | active | added 2026-10-20
+Rule: Prefer cash when NIFTY is below its 50-bar average and down more than 0.5% today.
+Why: Momentum lost money on falling days.
+
+## R2 | trial | added 2026-10-21
+Rule: Do not switch winners twice in a row.
+Why: Churn cost fees.
+
+## R3 | retired | added 2026-10-19 | retired 2026-10-21
+Rule: Always follow the news agent.
+Why: Was wrong.
+"""
+
+
+@pytest.fixture(autouse=True)
+def coach_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("PURPLE_COACH_DIR", str(tmp_path / "coach"))
+    return tmp_path / "coach"
+
+
+def write_playbook(folder, text=PLAYBOOK):
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "playbook.md").write_text(text, encoding="utf-8")
+
+
+def test_playbook_parse_render_retire_and_check(coach_dir):
+    write_playbook(coach_dir)
+    rules = coach.read_playbook()
+    assert [(r["id"], r["status"]) for r in rules] == [("R1", "active"), ("R2", "trial"), ("R3", "retired")]
+    assert rules[2]["retired"] == "2026-10-21" and [r["id"] for r in coach.live_rules()] == ["R1", "R2"]
+    assert coach.parse_playbook(coach.render_playbook(rules)) == rules
+    coach.retire("r2", today="2026-10-22")
+    assert [r["id"] for r in coach.live_rules()] == ["R1"]
+    with pytest.raises(KeyError):
+        coach.retire("R3")
+    text = coach.render_playbook(rules * 1) + "## R9 | maybe | added x\n"
+    assert any("headings" in e for e in coach.check(coach.parse_playbook(text), text))
+    many = [{**rules[0], "id": f"R{i}"} for i in range(11)]
+    assert any("at most 10" in e for e in coach.check(many, coach.render_playbook(many)))
+
+
+def test_chief_prompt_carries_the_playbook_as_data_and_rules_used_is_validated():
+    p = panel(120)
+    mkt = desk.features(p.market)
+    rules = coach.parse_playbook(PLAYBOOK)[:2]
+    text = desk.chief_prompt(p.times[100], {}, {}, [], 500_000, mkt, 100, None, [], rules)
+    line = text.splitlines()[-1]
+    assert line.startswith("<data>Coach playbook: R1: Prefer cash") and "R2 (trial):" in line and line.endswith("</data>")
+    assert "Coach playbook" not in desk.chief_prompt(p.times[100], {}, {}, [], 500_000, mkt, 100, None, [])
+    got = desk.parse_chief('{"winner":"guard","rules_used":["r1","R9","R1",3]}', {}, ["R1", "R2"])
+    assert got["rules_used"] == ["R1"]
+    assert desk.parse_chief('{"winner":"guard","rules_used":"R1"}', {}, ["R1"])["rules_used"] == []
+
+
+def test_live_decision_records_rules_shown_and_used(client, coach_dir):
+    write_playbook(coach_dir)
+    chief = json.dumps({"winner": "guard", "targets": {}, "reason": "Stay in cash.", "rules_used": ["R1", "R3"]})
+    prov = FakeProvider(json.dumps({}), chief)
+    prov.name = "gemini"
+    c = client(prov)
+    c.post("/api/desk", json={"capital": 500000, "days": 7})
+    c.post("/api/desk/decide")
+    assert "<data>Coach playbook: R1" in prov.calls[1][-1]["content"] and "R3" not in prov.calls[1][-1]["content"]
+    v = c.get("/api/desk").json()
+    assert v["decisions"][0]["rules_used"] == ["R1"]
+    assert [r["id"] for r in v["coach"]["rules"]] == ["R1", "R2"] and v["coach"]["rules"][0]["score"]["verdict"] == "too early"
+    assert [r["id"] for r in c.post("/api/desk/coach/rules/R1/retire").json()["rules"]] == ["R2"]
+    assert c.post("/api/desk/coach/rules/R1/retire").status_code == 404
+
+
+def seeded_bot(db, n=300):
+    """A bot that started at bar 100 with an AI decision on every bar of four days; R1 cited on even bars."""
+    for i, s in enumerate(desk.UNIVERSE):
+        db.upsert_bars(s, desk.INTERVAL, bars30(n, i * 3.0))
+    db.upsert_bars(desk.MARKET, desk.INTERVAL, bars30(n))
+    p = coach.load_panel(db)
+    bot = db.add_desk("test", 500_000, 0, p.times[104])
+    for t in range(104, 104 + 4 * desk.BARS_PER_DAY):
+        cited = t % 2 == 0
+        db.save_decision(f"desk:{bot['id']}", p.times[t], {
+            "winner": "trend" if cited else "guard", "targets": {"INFY.NS": 0.3} if cited else {},
+            "reason": "r", "by": "gemini:x", "debate": [{"agent": "trend", "case": "uptrend"}],
+            "records": {a: 0.1 for a in desk.AGENT_IDS}, "proposals": {"trend": {"INFY": 0.3}},
+            "rules_shown": ["R1", "R2"], "rules_used": ["R1"] if cited else [], "confidence": 50})
+    return p, bot
+
+
+def test_review_pack_separates_knowledge_from_outcomes_and_scores_rules(coach_dir):
+    write_playbook(coach_dir)
+    db = Store(":memory:")
+    p, bot = seeded_bot(db)
+    day = p.times[104 + desk.BARS_PER_DAY][:10]
+    pack = coach.build_review(db, bot, day, p)
+    s = pack["summary"]
+    assert pack["day"] == day and s["decisions"] == len(pack["decisions"]) > 0 and s["by_ai"] == s["decisions"]
+    assert set(s["winners"]) <= {"Trend rider", "Risk guard"} and s["trades"] >= 1
+    d = pack["decisions"][0]
+    assert set(d) == {"time", "knew", "chose", "outcome"} and d["time"].startswith(day)
+    assert {"nifty", "mood", "agents", "rules_shown"} == set(d["knew"]) and len(d["knew"]["agents"]) == 5
+    assert d["knew"]["agents"][1]["case"] == "uptrend"
+    o = d["outcome"]
+    assert set(o) == {"1", "3", "13"} and set(o["3"]) == {"desk", "nifty", *desk.AGENT_IDS}
+    # the 3-bar NIFTY outcome is exactly the market move from this bar's close
+    t = p.times.index(d["time"])
+    assert o["3"]["nifty"] == round((p.market[t + 3].close / p.market[t].close - 1) * 100, 3)
+    sc = pack["scorecard"]
+    assert sc["R1"]["followed"]["n"] > 4 and sc["R1"]["followed"]["days"] >= 2
+    assert sc["R1"]["verdict"] in ("helping", "hurting", "no clear effect")
+    assert sc["R2"]["followed"]["n"] == 0 and sc["R2"]["verdict"] == "too early"
+    md = coach.write_review(pack)
+    text = md.read_text(encoding="utf-8")
+    assert md.name == f"{day}.md" and md.with_suffix(".json").exists()
+    assert "## Day summary" in text and "What it knew:" in text and "Outcome (hindsight" in text and "| R1 |" in text
+    # outcomes not yet known stay empty instead of guessing
+    last = coach.build_review(db, bot, None, desk.Panel(p.times[:156], {k: v[:156] for k, v in p.bars.items()}, p.market[:156]))
+    assert last["decisions"][-1]["outcome"]["13"]["desk"] is None
+
+
+def test_review_endpoint_and_cli(client, coach_dir, monkeypatch, tmp_path):
+    c = client(FakeProvider())
+    assert c.get("/api/desk/review").status_code == 404
+    db = c.app.state.store
+    p, bot = seeded_bot(db)
+    r = c.get("/api/desk/review").json()
+    assert r["day"] == max(db.get_decisions(f"desk:{bot['id']}"))[:10] and r["decisions"]
+    assert c.get("/api/desk/review?day=22-10-2026").status_code == 422
+    r = c.get(f"/api/desk/review?day={p.times[110][:10]}&save=true").json()
+    assert (coach_dir / "reviews" / f"{p.times[110][:10]}.md").exists() and r["saved_to"]
+    file_db = tmp_path / "cli.sqlite3"
+    seeded_bot(Store(file_db))
+    monkeypatch.setenv("PURPLE_DB", str(file_db))
+    assert coach.main(["review"]) == 0 and len(list((coach_dir / "reviews").glob("*.md"))) == 2
+    write_playbook(coach_dir)
+    assert coach.main(["check"]) == 0

@@ -7,6 +7,33 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026; Beat the market added 22 Oct)
 
+**Claude coaches the bot (22 Oct 2026, evening; not pushed)**
+- Goal: after each trading day Claude Code reviews the desk's decisions and writes a short playbook; the Gemini chief
+  reads it in every decision. Claude never runs in the live loop; no paid calls. Not scheduled yet (user can ask).
+- `purple_api/coach.py`: review pack (`build_review`: day summary desk vs NIFTY, winners, trades; per decision
+  "knew" = NIFTY state, mood read at or before the bar, each agent's proposal + two-day record + debate case, coach
+  rules shown; "chose" = winner, targets, reason, confidence, by, rules_used; "outcome" = hindsight returns from the
+  bar's close over 1/3/13 bars for desk, NIFTY and each agent's shadow portfolio, None when not yet known),
+  `write_review` → `purple/coach/reviews/<day>.md` + `.json`, playbook parse/render/retire/check, `scorecard`
+  (per rule: 3-bar edge vs NIFTY of AI decisions that cited it vs those that saw it and did not; verdict "too early"
+  until followed ≥4 times on ≥2 days, then helping / hurting / no clear effect at ±0.05 pts). Also now holds the
+  shared `load_panel`, `run_book`, `mood_index` (desk_routes calls them). CLI: `python -m purple_api.coach review
+  [--day] [--bot]` and `check`. `PURPLE_COACH_DIR` overrides the folder (tests, scratch server).
+- Playbook format: `## R<n> | active|trial|retired | added <date>[ | retired <date>]`, then `Rule:` and `Why:`.
+  Live = active + trial, max 10. `desk.chief_prompt(..., rules)` appends them in one `<data>Coach playbook: ...</data>`
+  line (text cut at 160 chars); `CHIEF_SYSTEM` calls it advice that never changes the limits and asks for
+  `rules_used`; `parse_chief(raw, props, rule_ids)` keeps only shown ids. Decisions store `rules_shown`/`rules_used`.
+- Routes: `GET /api/desk/review?day=&save=`, `POST /api/desk/coach/rules/{id}/retire`; `GET /api/desk` has
+  `coach.rules[]` with scores and decisions carry `rules_used`. UI: "Coach notes" panel in `BotBrain.tsx` (rules, date,
+  why, verdict chip, followed count + edge, Remove with confirm); debate note says which rules were followed.
+- `/coach-bot` = `CIS/.claude/commands/coach-bot.md` (review → judge on what it knew → edit playbook → `coach check` →
+  journal entry → commit `purple/coach/` locally). Playbook starts empty (no evidence yet).
+- `purple-desk-test` now also sets `PURPLE_COACH_DIR=%TEMP%\purple-desk-test-coach` (seeded test rules there).
+- Verified: 100 backend tests (5 new in `tests/test_desk.py`), tsc + build clean, on the scratch server: review
+  endpoint, Coach notes panel, Remove (playbook marked retired), 375 px no sideways scroll. NOT yet seen: a real
+  Gemini decision citing a rule, and a `/coach-bot` run on a full real trading day. The user's server on 8780 runs
+  the old code until restarted; after a restart the bot reads `purple/coach/playbook.md` at every decision.
+
 **Purple Desk: the main product (22 Oct 2026, later the same day; not pushed)**
 - User brief: home = one AI trading bot. Start with an amount (default ₹5,00,000), it paper-trades on its own every
   30 minutes (buy/sell/hold), for 7 days, 30 days or until stopped; dashboard like a trading app (portfolio vs NIFTY,

@@ -1302,6 +1302,18 @@ kbd { font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--
 .mood-bar i.down { background: var(--loss); }
 .mood-why { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lessons { margin: 0; padding: 0 20px 18px 40px; display: flex; flex-direction: column; gap: 8px; font-size: 14.5px; }
+.coach-rules { list-style: none; margin: 0; padding: 0 20px 16px; display: flex; flex-direction: column; gap: 14px; }
+.coach-rules li { display: flex; flex-direction: column; gap: 5px; padding-top: 12px; border-top: 1px solid var(--line); }
+.coach-rules li:first-child { border-top: 0; padding-top: 0; }
+.coach-rule-top { display: flex; align-items: flex-start; gap: 10px; }
+.coach-rule-top p { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 600; line-height: 1.45; }
+.coach-rule-top .btn { flex: none; min-height: 30px; color: var(--ink-2); }
+.coach-id { flex: none; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--accent-wash); color: var(--accent); margin-top: 2px; }
+.coach-rules .sub { font-size: 13px; line-height: 1.45; }
+.coach-score { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+.coach-verdict { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); }
+.coach-verdict.v-helping { background: var(--gain-wash); color: var(--gain); }
+.coach-verdict.v-hurting { background: var(--loss-wash); color: var(--loss); }
 .bt-body { display: flex; flex-direction: column; gap: 14px; padding: 0 20px 20px; }
 .bt-stats { display: flex; gap: 28px; flex-wrap: wrap; }
 .bt-stats b { font-family: var(--display); font-size: 24px; letter-spacing: -0.02em; }

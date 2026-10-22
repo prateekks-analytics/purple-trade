@@ -311,7 +311,18 @@ export interface DeskDecision {
   targets: Record<string, number>
   debate: { agent: string; name: string; case: string }[]
   confidence: number | null
+  rules_used?: string[]
 }
+export interface CoachStat { n: number; days: number; edge_pct: number | null }
+export interface CoachRule {
+  id: string
+  text: string
+  why: string
+  added: string
+  status: 'active' | 'trial' | 'retired'
+  score?: { followed: CoachStat; not_followed: CoachStat; verdict: 'too early' | 'helping' | 'hurting' | 'no clear effect' } | null
+}
+export interface DeskCoach { rules: CoachRule[] }
 export interface DeskBot { id: string; name: string; capital: number; days: number; start_time: string; status: 'running' | 'stopped' | 'finished'; created_at: string }
 export interface DeskView {
   bot: DeskBot | null
@@ -335,6 +346,7 @@ export interface DeskView {
   ai?: boolean
   last_error?: string | null
   market_name?: string
+  coach?: DeskCoach
 }
 export interface DeskBacktest {
   from: string

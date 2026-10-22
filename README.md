@@ -26,6 +26,15 @@ their recent results, picks the winner, and the bot paper-trades it at the next 
 portfolio against NIFTY 50, every buy and sell, holdings and the latest decision; "How the bot thinks" shows the
 agents, debates, mood, daily lessons and a 40-day backtest. Keep Purple running during market hours.
 
+**Claude coaches the bot.** After a trading day, run `/coach-bot` in Claude Code (from the CIS folder). Claude reads
+that day's review pack (`purple/coach/reviews/<day>.md`: what the bot knew at each decision, then what happened next),
+judges each call on the information it had, and keeps a short playbook (`purple/coach/playbook.md`, at most 10
+rules) plus a journal (`purple/coach/journal.md`). The AI chief reads the playbook before every 30-minute decision
+and says which rules it followed, so each rule gets a scorecard. "Coach notes" on the Bot page lists the rules, how
+they score, and a Remove button. Claude never trades and never runs inside the live loop; Gemini stays the bot's AI.
+Review pack without Claude: `GET /api/desk/review?day=YYYY-MM-DD[&save=true]` or, in `purple/backend`,
+`.venv\Scripts\python.exe -m purple_api.coach review [--day YYYY-MM-DD]`.
+
 Under **More**: the single-stock tools below.
 
 **Beat the market, single stock** (`#/race`). Build a bot that stays ahead of NIFTY 50 for a week:

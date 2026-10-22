@@ -1,9 +1,54 @@
 import { useState } from 'react'
-import { AgentMark, PortfolioChart, pct, signed, useBacktest, useDesk, when } from './DeskBits'
+import { api } from '../api'
+import type { CoachRule } from '../types'
+import { errText } from './AgentBits'
+import { AgentMark, PortfolioChart, dayLabel, pct, signed, useBacktest, useDesk, when } from './DeskBits'
+
+/** Rules Claude wrote after reviewing past days; the chief reads them before every decision. */
+function CoachNotes({ rules, onChange }: { rules: CoachRule[]; onChange: () => void }) {
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const remove = async (r: CoachRule) => {
+    if (!confirm(`Remove coach rule ${r.id}? The bot stops reading it at its next decision.`)) return
+    setBusy(r.id)
+    setError('')
+    try { await api.coachRetire(r.id); onChange() } catch (e) { setError(errText(e)) } finally { setBusy('') }
+  }
+  return (
+    <section className="panel" aria-labelledby="coach-h">
+      <div className="panel-head"><h2 id="coach-h" className="panel-title">Coach notes</h2><span className="sub">{rules.length ? `${rules.length} rule${rules.length > 1 ? 's' : ''} the chief reads` : ''}</span></div>
+      {rules.length ? (
+        <ul className="coach-rules">
+          {rules.map(r => {
+            const s = r.score
+            const f = s?.followed
+            return (
+              <li key={r.id}>
+                <div className="coach-rule-top">
+                  <span className="coach-id">{r.id}</span>
+                  <p>{r.text}</p>
+                  <button className="btn sm quiet" onClick={() => remove(r)} disabled={busy !== ''} aria-label={`Remove rule ${r.id}`}>{busy === r.id ? 'Removing…' : 'Remove'}</button>
+                </div>
+                <p className="sub">Added {dayLabel(r.added)}{r.status === 'trial' ? ' · on trial' : ''} · {r.why}</p>
+                {s && f && (
+                  <p className="coach-score">
+                    <span className={`coach-verdict v-${s.verdict.replace(/ /g, '-')}`}>{s.verdict === 'too early' ? 'Too early to tell' : s.verdict === 'no clear effect' ? 'No clear effect' : s.verdict === 'helping' ? 'Helping' : 'Hurting'}</span>
+                    {f.n ? <>Followed {f.n}× on {f.days} day{f.days === 1 ? '' : 's'}: {f.edge_pct == null ? '—' : pct(f.edge_pct)} vs NIFTY over the next 90 min{s.not_followed.n && s.not_followed.edge_pct != null ? <> (without it {pct(s.not_followed.edge_pct)})</> : null}</> : 'Not followed yet.'}
+                  </p>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      ) : <p className="pad">No coach notes yet. After a trading day Claude reviews every decision and writes a few rules here; the chief reads them every 30 minutes.</p>}
+      {error && <p className="pad error-text" role="alert">{error}</p>}
+    </section>
+  )
+}
 
 /** How the bot thinks: its agents, the latest debates, the news mood, what it learned, and the replay. */
 export function BotBrain() {
-  const { view } = useDesk()
+  const { view, reload } = useDesk()
   const { bt, error: btError } = useBacktest(40, view?.capital ?? 500000)
   const [open, setOpen] = useState(0)
   const decisions = view?.decisions ?? []
@@ -53,7 +98,7 @@ export function BotBrain() {
                           {d.debate.map(c => <li key={c.agent} className={c.agent === d.winner ? 'won' : ''}><AgentMark id={c.agent} size="sm" /><span><b>{c.name}:</b> {c.case}</span></li>)}
                         </ul>
                       )}
-                      <p className="field-note">{d.by === 'record' ? 'Decided by track record (no AI answered).' : `Judged by ${d.by}.`}</p>
+                      <p className="field-note">{d.by === 'record' ? 'Decided by track record (no AI answered).' : `Judged by ${d.by}.`}{d.rules_used?.length ? ` Followed coach ${d.rules_used.length > 1 ? 'rules' : 'rule'} ${d.rules_used.join(', ')}.` : ''}</p>
                     </div>
                   )}
                 </li>
@@ -83,6 +128,7 @@ export function BotBrain() {
               ? <ul className="lessons">{view.lessons.map((l, i) => <li key={i}>{l}</li>)}</ul>
               : <p className="pad">After each trading day the AI reviews the results and writes lessons the chief uses the next day.</p>}
           </section>
+          <CoachNotes rules={view?.coach?.rules ?? []} onChange={reload} />
         </div>
       </div>
 

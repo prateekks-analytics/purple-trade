@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from . import desk, market, news
+from . import coach, desk, market, news
 from .store import Store
 
 COMPANY = {"RELIANCE.NS": "Reliance Industries", "HDFCBANK.NS": "HDFC Bank", "ICICIBANK.NS": "ICICI Bank",
@@ -85,7 +85,7 @@ def register(app: FastAPI, db: Store):
         mkt = db.get_market_bars(desk.MARKET, desk.INTERVAL)
         if len(mkt) < 60:
             raise HTTPException(503, "Not enough 30-minute prices yet. Check the internet connection and try again.")
-        return desk.align({s: db.get_market_bars(s, desk.INTERVAL) for s in desk.UNIVERSE}, mkt)
+        return coach.load_panel(db)
 
     def stale(p: desk.Panel, now: datetime) -> bool:
         """True when a newer bar than the newest stored one has completed."""
@@ -94,14 +94,6 @@ def register(app: FastAPI, db: Store):
     # ----- the bot's memory -----
     def moods(bot: dict) -> dict[str, dict]:
         return db.get_decisions(f"deskmood:{bot['id']}")
-
-    def mood_index(p: desk.Panel, ms: dict[str, dict]) -> dict[int, dict[str, float]]:
-        out = {}
-        for ts, m in ms.items():
-            i = max((i for i, t in enumerate(p.times) if t <= ts), default=None)
-            if i is not None:
-                out[i] = {s: v["score"] for s, v in m["scores"].items()}
-        return out
 
     def lessons(bot: dict) -> list[str]:
         return [x for d in db.get_decisions(f"desklesson:{bot['id']}").values() for x in d.get("lessons", [])]
@@ -124,17 +116,11 @@ def register(app: FastAPI, db: Store):
 
     # ----- one decision -----
     def run_book(bot: dict, p: desk.Panel) -> tuple[dict, int, dict]:
-        start = p.times.index(bot["start_time"]) if bot["start_time"] in p.times else \
-            next((i for i, t in enumerate(p.times) if t >= bot["start_time"]), len(p) - 1)
-        ds = db.get_decisions(f"desk:{bot['id']}")
-        idx = {t: i for i, t in enumerate(p.times)}
-        targets = {idx[t]: d["targets"] for t, d in ds.items() if t in idx}
-        notes = {idx[t]: d["winner"] for t, d in ds.items() if t in idx}
-        return desk.simulate(p, targets, bot["capital"], start, notes), start, ds
+        return coach.run_book(db, bot, p)
 
     def decide(bot: dict, p: desk.Panel, t: int) -> dict:
         s0 = max(0, t - desk.RECORD_BARS - 3 * desk.BARS_PER_DAY)
-        sh = desk.shadows(p, bot["capital"], mood_index(p, moods(bot)), start=s0)
+        sh = desk.shadows(p, bot["capital"], coach.mood_index(p, moods(bot)), start=s0)
         props = {a: sh["agents"][a]["proposals"][t] for a in desk.AGENT_IDS}
         recs = {a: desk.record(sh["agents"][a]["sim"], s0, t) for a in desk.AGENT_IDS}
         book, _, ds = run_book(bot, p)
@@ -145,11 +131,13 @@ def register(app: FastAPI, db: Store):
                "proposals": {a: {desk.short(s): w for s, w in v.items()} for a, v in props.items()}}
         prov = ai()
         if prov:
+            rules = coach.live_rules()
+            ids = [r["id"] for r in rules]
             try:
                 prompt = desk.chief_prompt(p.times[t], props, recs, book["holdings"], book["equity"][-1]["value"],
-                                           sh["market"], t, mood, lessons(bot))
-                got = desk.parse_chief(prov.complete(desk.CHIEF_SYSTEM, [{"role": "user", "content": prompt}]), props)
-                return {**out, **got, "by": f"{prov.name}:{prov.model}"}
+                                           sh["market"], t, mood, lessons(bot), rules)
+                got = desk.parse_chief(prov.complete(desk.CHIEF_SYSTEM, [{"role": "user", "content": prompt}]), props, ids)
+                return {**out, **got, "rules_shown": ids, "by": f"{prov.name}:{prov.model}"}
             except Exception as e:  # noqa: BLE001 - any AI failure falls back to the track record
                 state["last_error"] = f"AI chief: {type(e).__name__}: {str(e)[:160]}"
         win = desk.judge(sh, s0, t, prev)
@@ -269,7 +257,8 @@ def register(app: FastAPI, db: Store):
         decisions = [{"time": t, "winner": d["winner"], "winner_name": names[d["winner"]], "reason": d.get("reason", ""),
                       "by": d.get("by"), "targets": {desk.short(s): w for s, w in d["targets"].items()},
                       "debate": [{**x, "name": names.get(x["agent"], x["agent"])} for x in d.get("debate", [])],
-                      "confidence": d.get("confidence")} for t, d in sorted(ds.items(), reverse=True)[:40]]
+                      "confidence": d.get("confidence"), "rules_used": d.get("rules_used", [])}
+                     for t, d in sorted(ds.items(), reverse=True)[:40]]
         return {
             "bot": {**bot, "status": "finished" if is_done and bot["status"] == "running" else bot["status"]},
             "value": last["value"], "cash": book["cash"], "capital": cap,
@@ -282,13 +271,20 @@ def register(app: FastAPI, db: Store):
             "next_decision": None if is_done else next_bar_close(datetime.now(market.IST)).strftime("%H:%M"),
             "ai": bool(ai()), "last_error": state["last_error"], "market_name": desk.MARKET_NAME,
             "universe": [desk.short(s) for s in desk.UNIVERSE],
+            "coach": coach_view(bot, p, book, start, ds),
         }
+
+    def coach_view(bot: dict | None, p=None, book=None, start=0, ds=None) -> dict:
+        rules = coach.live_rules()
+        score = coach.scorecard(p, book, start, ds, rules) if bot and p is not None else {}
+        return {"rules": [{**r, "score": score.get(r["id"])} for r in rules]}
 
     @app.get("/api/desk")
     def desk_get():
         bot = running() or next(iter(db.list_desks()), None)
         if not bot:
-            return {"bot": None, "agents": desk.AGENTS, "universe": [desk.short(s) for s in desk.UNIVERSE]}
+            return {"bot": None, "agents": desk.AGENTS, "universe": [desk.short(s) for s in desk.UNIVERSE],
+                    "coach": coach_view(None)}
         p = panel() if db.get_market_bars(desk.MARKET, desk.INTERVAL) else None
         if bot["status"] == "running" and (p is None or stale(p, datetime.now(market.IST))):
             fetch("1d", 60)
@@ -334,6 +330,29 @@ def register(app: FastAPI, db: Store):
         fetch("1d", 60)
         _safe_step(bot)
         return view(db.get_desk(bot["id"]))
+
+    @app.get("/api/desk/review")
+    def desk_review(day: str | None = None, save: bool = False):
+        """Review pack for one trading day (default: the newest day with decisions) of the running or newest bot.
+        save=true also writes coach/reviews/<day>.md and .json for the /coach-bot review."""
+        if day is not None and not (len(day) == 10 and day[4] == day[7] == "-" and day.replace("-", "").isdigit()):
+            raise HTTPException(422, "day must be YYYY-MM-DD")
+        bot = coach.pick_bot(db)
+        if not bot:
+            raise HTTPException(404, "No bot has run yet.")
+        pack = coach.build_review(db, bot, day, panel())
+        if save:
+            pack["saved_to"] = str(coach.write_review(pack))
+        return pack
+
+    @app.post("/api/desk/coach/rules/{rule_id}/retire")
+    def coach_retire(rule_id: str):
+        """Remove a coach rule from what the chief reads (kept in the playbook as retired)."""
+        try:
+            coach.retire(rule_id)
+        except KeyError:
+            raise HTTPException(404, "No live coach rule with that id.") from None
+        return coach_view(None)
 
     @app.get("/api/desk/backtest")
     def desk_backtest(days: int = 40, capital: float = 500_000):
