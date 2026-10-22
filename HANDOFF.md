@@ -37,6 +37,11 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 - Verified: 95 tests pass; tsc + build clean; launch → start → first decision on a scratch DB (`purple-desk-test`,
   port 8782, `%TEMP%\purple-desk-test.sqlite3`, live loop on); 375 px no sideways scroll. NOT yet seen: trades and
   chart markers during market hours, the lessons call, a full 7-day run. The user's real DB has no desk bot yet.
+- Claude (22 Oct): user's key is in `purple/.env` (git-ignored) and valid for claude-opus-5-5, but the API account has
+  no credit (credit-balance error on a tiny call; nothing charged). Pro-plan "cloud session credits" ($100, expire
+  5 Nov) do not pay for API calls. User chose: keep the bot on free Gemini; Claude later. Re-check with
+  `backend\.venv\Scripts\python.exe tools\claude_check.py` (anthropic SDK 2.1 installed with approval). Wiring the desk
+  to Claude Opus 5.5 with Gemini fallback is NOT built yet; `default_provider` ignores ANTHROPIC_API_KEY.
 - To run it for real the server must stay up during market hours with the live loop on (`purple-api` config, port
   8780, or the exe after a rebuild); `purple-check` has the loop off.
 
