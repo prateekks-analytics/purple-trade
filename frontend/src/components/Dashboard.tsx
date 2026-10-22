@@ -114,6 +114,7 @@ function Running({ view, setView, onNew }: { view: DeskView; setView: (v: DeskVi
           <p className={`bot-state ${running ? 'on' : ''}`}><i aria-hidden="true" />{running ? (nse.open ? 'Trading' : 'Waiting for market') : bot.status === 'finished' ? 'Finished' : 'Stopped'}</p>
           <p className="sub">{bot.days ? `Day ${Math.min(view.day ?? 0, bot.days)} of ${bot.days}` : `Day ${view.day ?? 0}`} · {fmtMoney(cap)} start</p>
           {running && view.next_decision && <p className="sub">Next decision {view.next_decision} IST</p>}
+          {view.guard?.length ? <p className="guard-note" role="status">Crash guard, {view.guard[view.guard.length - 1].time}: {view.guard[view.guard.length - 1].reason}</p> : <p className="sub">Crash guard on: checks every minute</p>}
           {running && !view.ai && <p className="warn-note">No AI connected on the server: the bot follows the best track record.</p>}
           <div className="status-actions">
             {running && <button className="btn sm quiet" onClick={() => act('decide')} disabled={busy !== ''}>{busy === 'decide' ? 'Deciding…' : 'Decide now'}</button>}

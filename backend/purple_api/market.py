@@ -176,6 +176,18 @@ def fundamentals(symbol: str) -> list[dict]:
     return sorted(out, key=lambda r: (r["as_of"], r["type"]))
 
 
+def recent_prices(symbol: str, minutes: int = 30, now: datetime | None = None) -> tuple[float, list[float]]:
+    """One call: the latest price and every 5-minute close of the last `minutes` (today only), for the crash guard."""
+    c = _chart(ticker(symbol), "1d", "5m")
+    price = (c.get("meta") or {}).get("regularMarketPrice")
+    if price is None:
+        raise MarketError(f"Yahoo Finance has no current price for {symbol}.")
+    q = ((c.get("indicators") or {}).get("quote") or [{}])[0]
+    since = (now or datetime.now(timezone.utc)).timestamp() - minutes * 60 - 300
+    closes = [cl for ts, cl in zip(c.get("timestamp") or [], q.get("close") or []) if cl is not None and ts >= since]
+    return float(price), [float(x) for x in closes]
+
+
 def quote(symbol: str, now: datetime | None = None) -> dict:
     """Latest traded price (delayed) and whether the regular session is open now."""
     tk = ticker(symbol)

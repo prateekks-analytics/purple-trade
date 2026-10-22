@@ -1302,6 +1302,7 @@ kbd { font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--
 .mood-bar i.down { background: var(--loss); }
 .mood-why { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lessons { margin: 0; padding: 0 20px 18px 40px; display: flex; flex-direction: column; gap: 8px; font-size: 14.5px; }
+.guard-note { font-size: 13px; line-height: 1.45; color: var(--loss); background: var(--loss-wash); border-radius: 10px; padding: 6px 10px; }
 .coach-rules { list-style: none; margin: 0; padding: 0 20px 16px; display: flex; flex-direction: column; gap: 14px; }
 .coach-rules li { display: flex; flex-direction: column; gap: 5px; padding-top: 12px; border-top: 1px solid var(--line); }
 .coach-rules li:first-child { border-top: 0; padding-top: 0; }

@@ -291,3 +291,48 @@ def test_compare_styles_reports_each_way_of_choosing():
 def test_chief_aims_for_maximum_return_not_just_the_index():
     assert "highest return" in desk.CHIEF_SYSTEM and "only the minimum" in desk.CHIEF_SYSTEM
     assert "highest return" in desk.LESSON_SYSTEM
+
+
+def test_guard_check_rules():
+    held = ["INFY.NS", "TCS.NS"]
+    hit = desk.guard_check(held, 99.2, [100.0, 99.8], {"INFY.NS": 10, "TCS.NS": 10}, {"INFY.NS": 10, "TCS.NS": 10})
+    assert hit["kind"] == "market" and hit["symbols"] == held and "0.8%" in hit["reason"]
+    hit = desk.guard_check(held, 100, [100.2], {"INFY.NS": 94.9, "TCS.NS": 99}, {"INFY.NS": 100, "TCS.NS": 100})
+    assert hit["kind"] == "stock" and hit["symbols"] == ["INFY.NS"]
+    assert desk.guard_check(held, 99.5, [100.0], {"INFY.NS": 96}, {"INFY.NS": 100}) is None  # small dips: hold
+    assert desk.guard_check([], 50, [100], {}, {}) is None
+
+
+def test_guard_sale_in_the_books():
+    p = panel(40)
+    sim = desk.simulate(p, {5: {"RELIANCE.NS": 0.5}}, 100_000, exits={8: [("RELIANCE.NS", 99.0, "crash guard")]})
+    sell = sim["trades"][-1]
+    assert sell["side"] == "SELL" and sell["why"] == "crash guard" and sell["price"] == round(99.0 * 0.9995, 2)
+    assert not sim["holdings"] and sim["equity"][8]["value"] == sim["equity"][-1]["value"]  # cash from then on
+    now = desk.simulate(p, {5: {"RELIANCE.NS": 0.5}}, 100_000, exits={len(p): [("RELIANCE.NS", 99.0, "crash guard")]})
+    assert not now["holdings"] and now["trades"][-1]["time"] == "now"  # a sale in the bar still forming
+
+
+def test_guard_in_the_live_loop(client, monkeypatch):
+    c = client(FakeProvider())
+    c.post("/api/desk", json={"capital": 500000, "days": 0})
+    db = c.app.state.store
+    bot = db.list_desks()[0]
+    p = coach.load_panel(db)
+    db.save_decision(f"desk:{bot['id']}", p.times[-1], {"winner": "trend", "targets": {"INFY.NS": 0.3}, "reason": "r",
+                                                        "by": "record", "debate": [], "records": {}, "proposals": {}})
+    last = datetime.strptime(p.times[-1], "%Y-%m-%d %H:%M")
+    day = last + timedelta(days=1)
+    while day.weekday() >= 5:
+        day += timedelta(days=1)
+    now = day.replace(hour=11, minute=2, tzinfo=market.IST)
+    prices = {desk.MARKET: (99.0, [100.0, 99.6]), "INFY.NS": (50.0, [50.5])}
+    monkeypatch.setattr(market, "recent_prices", lambda s, minutes=30, now=None: prices[s])
+    c.app.state.desk_tick(now)
+    ev = coach.guard_events(db, bot)
+    assert len(ev) == 1 and ev[0]["kind"] == "market" and ev[0]["bar"] == day.strftime("%Y-%m-%d") + " 10:45"
+    assert ev[0]["prices"] == {"INFY.NS": 50.0}
+    book, _, _ = coach.run_book(db, bot, p)
+    assert not book["holdings"]
+    c.app.state.desk_tick(now + timedelta(minutes=1))
+    assert len(coach.guard_events(db, bot)) == 1  # one market sale per day

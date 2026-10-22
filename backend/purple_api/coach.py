@@ -123,7 +123,17 @@ def run_book(db, bot: dict, p: desk.Panel) -> tuple[dict, int, dict]:
     idx = {t: i for i, t in enumerate(p.times)}
     targets = {idx[t]: d["targets"] for t, d in ds.items() if t in idx}
     notes = {idx[t]: d["winner"] for t, d in ds.items() if t in idx}
-    return desk.simulate(p, targets, bot["capital"], start, notes), start, ds
+    exits: dict[int, list] = {}
+    for ev in db.get_decisions(f"deskguard:{bot['id']}").values():
+        i = idx.get(ev["bar"], len(p) if p.times and ev["bar"] > p.times[-1] else None)
+        if i is not None:
+            exits.setdefault(i, []).extend((s, px, "crash guard") for s, px in ev["prices"].items())
+    return desk.simulate(p, targets, bot["capital"], start, notes, exits), start, ds
+
+
+def guard_events(db, bot: dict, day: str | None = None) -> list[dict]:
+    evs = db.get_decisions(f"deskguard:{bot['id']}")
+    return [{**e, "at": k} for k, e in sorted(evs.items()) if day is None or e["day"] == day]
 
 
 def mood_index(p: desk.Panel, ms: dict[str, dict]) -> dict[int, dict[str, float]]:

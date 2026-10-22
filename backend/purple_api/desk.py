@@ -138,12 +138,23 @@ def propose(agent: str, t: int, f: dict[str, Features], mkt: Features, held: dic
 # ---------- portfolio simulation ----------
 
 def simulate(panel: Panel, targets: dict[int, dict[str, float]], capital: float, start: int = 0,
-             notes: dict[int, str] | None = None) -> dict:
+             notes: dict[int, str] | None = None, exits: dict[int, list[tuple[str, float, str]]] | None = None) -> dict:
     """Rebalance to targets[t] (decided on bar t's close) at bar t+1's open. Bars without a target: hold.
-    Returns equity per bar from `start`, executed trades and final holdings."""
+    exits[t]: crash-guard sales (symbol, price, why) made during bar t, after its open; t == len(panel) is the bar
+    still forming. Returns equity per bar from `start`, executed trades and final holdings."""
     fee, slip = FEE_BPS / 10_000, SLIP_BPS / 10_000
     cash, qty = capital, {}
     equity, trades, pending = [], [], None
+
+    def sell_out(t, items):
+        nonlocal cash
+        for s, price, why in items:
+            q = qty.pop(s, 0)
+            if q:
+                p = price * (1 - slip)
+                cash += q * p * (1 - fee)
+                trades.append({"time": panel.times[t] if t < len(panel) else "now", "symbol": short(s), "side": "SELL",
+                               "qty": q, "price": round(p, 2), "value": round(q * p), "why": why})
     for t in range(start, len(panel)):
         if pending is not None:
             want, why = pending
@@ -174,15 +185,47 @@ def simulate(panel: Panel, targets: dict[int, dict[str, float]], capital: float,
                     del qty[s]
                 trades.append({"time": panel.times[t], "symbol": short(s), "side": "BUY" if d > 0 else "SELL",
                                "qty": abs(d), "price": round(p, 2), "value": round(abs(d) * p), "why": why})
+        if exits and t in exits:
+            sell_out(t, exits[t])
         value = cash + sum(q * panel.bars[s][t].close for s, q in qty.items())
         equity.append({"time": panel.times[t], "value": round(value, 2)})
         if t in targets and t < len(panel) - 1:
             pending = (targets[t], (notes or {}).get(t, ""))
+    if exits and len(panel) in exits:  # guard sales during the bar that is still forming
+        sell_out(len(panel), exits[len(panel)])
     last = len(panel) - 1
     holdings = [{"symbol": short(s), "qty": q, "price": panel.bars[s][last].close,
                  "value": round(q * panel.bars[s][last].close, 2)} for s, q in sorted(qty.items())]
     return {"equity": equity, "trades": trades, "holdings": holdings, "cash": round(cash, 2),
             "pending": pending[0] if pending else None}
+
+
+# ---------- the crash guard (no AI, checked every minute) ----------
+# Replayed 22 Oct 2026 on 60 days of 5-minute prices: a NIFTY drop of 0.7% within 30 minutes -> all cash for the rest
+# of the day tied or beat no guard over 40/20/10 days; per-stock stops of 1.5-4% lost money (they sold dips that came
+# back), so the stock stop only catches big single-company falls.
+GUARD_MARKET_DROP = 0.007
+GUARD_WINDOW_MIN = 30
+GUARD_STOCK_DROP = 0.05
+
+
+def guard_check(held: list[str], market_now: float, market_window: list[float], stock_now: dict[str, float],
+                stock_high: dict[str, float]) -> dict | None:
+    """What the guard should sell now, or None. held: symbols owned; *_window/high: recent highs to compare with."""
+    if not held:
+        return None
+    top = max([market_now, *market_window])
+    if market_now <= top * (1 - GUARD_MARKET_DROP):
+        drop = (1 - market_now / top) * 100
+        return {"kind": "market", "symbols": list(held),
+                "reason": f"{MARKET_NAME} fell {drop:.1f}% in {GUARD_WINDOW_MIN} minutes, so the guard sold everything. "
+                          "The bot stays in cash for the rest of the day."}
+    hit = [s for s in held if s in stock_now and stock_now[s] <= stock_high.get(s, stock_now[s]) * (1 - GUARD_STOCK_DROP)]
+    if hit:
+        return {"kind": "stock", "symbols": hit,
+                "reason": ", ".join(short(s) for s in hit) + f" fell {GUARD_STOCK_DROP * 100:.0f}% or more from its high "
+                          "since the bot bought it, so the guard sold it. No buying it back today."}
+    return None
 
 
 def weights_of(panel: Panel, sim: dict) -> dict[str, float]:

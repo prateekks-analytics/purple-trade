@@ -56,7 +56,7 @@ def next_bar_close(now: datetime) -> datetime:
 
 def register(app: FastAPI, db: Store):
     state = {"fetched": {}, "last_error": None, "busy": False, "mood_at": {}, "lessons_done": set(),
-             "backtest": None}
+             "backtest": None, "guard_pause": 0.0}
     lock = threading.Lock()
 
     def ai():
@@ -160,8 +160,60 @@ def register(app: FastAPI, db: Store):
             except Exception as e:  # noqa: BLE001
                 state["last_error"] = f"News mood: {type(e).__name__}: {str(e)[:160]}"
                 state["mood_at"][bot["id"]] = time.time()
-        db.save_decision(key, p.times[t], decide(bot, p, t))
+        db.save_decision(key, p.times[t], after_guard(bot, p.times[t], decide(bot, p, t)))
         return True
+
+    def after_guard(bot: dict, bar: str, d: dict) -> dict:
+        """Later the same day, a guard sale stands: no buying back what it sold (or anything, after a market drop)."""
+        evs = [e for e in coach.guard_events(db, bot, bar[:10]) if e["bar"] <= bar]
+        if not evs:
+            return d
+        if any(e["kind"] == "market" for e in evs):
+            return {**d, "targets": {}, "reason": "Crash guard: in cash for the rest of the day. " + d.get("reason", "")}
+        blocked = {s for e in evs for s in e["symbols"]}
+        kept = {s: w for s, w in d["targets"].items() if s not in blocked}
+        if kept == d["targets"]:
+            return d
+        return {**d, "targets": kept, "reason": d.get("reason", "") + " Crash guard: "
+                + ", ".join(desk.short(s) for s in sorted(blocked)) + " not bought back today."}
+
+    def guard_tick(bot: dict, now: datetime) -> None:
+        """Every minute in the session: sell into a fast fall (see desk.guard_check). No AI calls."""
+        if time.time() < state["guard_pause"]:
+            return
+        ist = now.astimezone(market.IST)
+        day = ist.date().isoformat()
+        evs = coach.guard_events(db, bot, day)
+        if any(e["kind"] == "market" for e in evs):
+            return
+        p = panel()
+        book, start, ds = run_book(bot, p)
+        held = {f"{h['symbol']}.NS" for h in book["holdings"]}
+        if p.times[-1] in ds:  # the decision on the last completed bar was filled at this bar's open
+            held = set(ds[p.times[-1]]["targets"])
+        held -= {s for e in evs for s in e["symbols"]}
+        if not held:
+            return
+        try:
+            m_now, m_win = market.recent_prices(desk.MARKET, desk.GUARD_WINDOW_MIN, now)
+            s_now, s_high = {}, {}
+            for s in held:
+                price, win = market.recent_prices(s, desk.GUARD_WINDOW_MIN, now)
+                bought = max((tr["time"] for tr in book["trades"] if tr["symbol"] == desk.short(s) and tr["side"] == "BUY"),
+                             default=p.times[start])
+                closes = [b.close for b, t in zip(p.bars.get(s, []), p.times) if t >= bought]
+                s_now[s], s_high[s] = price, max(closes + win + [price])
+        except market.RateLimited:
+            state["guard_pause"] = time.time() + 600
+            return
+        hit = desk.guard_check(sorted(held), m_now, m_win, s_now, s_high)
+        if hit:
+            k = max(0, (ist.hour * 60 + ist.minute - (9 * 60 + 15)) // 30)
+            bar = f"{day} {(9 * 60 + 15 + 30 * k) // 60:02d}:{(9 * 60 + 15 + 30 * k) % 60:02d}"
+            db.save_decision(f"deskguard:{bot['id']}", ist.strftime("%Y-%m-%d %H:%M:%S"),
+                             {"bar": bar, "day": day, "kind": hit["kind"], "symbols": hit["symbols"],
+                              "prices": {s: s_now[s] for s in hit["symbols"]}, "reason": hit["reason"],
+                              "time": ist.strftime("%H:%M")})
 
     def learn(bot: dict, p: desk.Panel, day: str) -> None:
         """After the close: one AI call turns today's results into lessons for tomorrow."""
@@ -205,10 +257,18 @@ def register(app: FastAPI, db: Store):
             return
         ist = now.astimezone(market.IST)
         hm = (ist.hour, ist.minute)
-        if ist.weekday() >= 5 or not ((9, 45) <= hm <= (16, 15)):
+        in_session = ist.weekday() < 5 and (9, 16) <= hm <= (15, 30)
+        if ist.weekday() >= 5 or not (in_session or (9, 45) <= hm <= (16, 15)):
             return
         state["busy"] = True
         try:
+            if in_session and db.get_market_bars(desk.MARKET, desk.INTERVAL):
+                try:
+                    guard_tick(bot, now)
+                except Exception as e:  # noqa: BLE001 - a guard failure never blocks the decisions
+                    state["last_error"] = f"Crash guard: {type(e).__name__}: {str(e)[:160]}"
+            if not (9, 45) <= hm <= (16, 15):
+                return
             p = panel() if db.get_market_bars(desk.MARKET, desk.INTERVAL) else None
             if p is None or stale(p, now):
                 fetch("1d", 50)
@@ -272,6 +332,8 @@ def register(app: FastAPI, db: Store):
             "ai": bool(ai()), "last_error": state["last_error"], "market_name": desk.MARKET_NAME,
             "universe": [desk.short(s) for s in desk.UNIVERSE],
             "coach": coach_view(bot, p, book, start, ds),
+            "guard": [{"time": e["time"], "kind": e["kind"], "reason": e["reason"]}
+                      for e in coach.guard_events(db, bot, datetime.now(market.IST).date().isoformat())],
         }
 
     def coach_view(bot: dict | None, p=None, book=None, start=0, ds=None) -> dict:

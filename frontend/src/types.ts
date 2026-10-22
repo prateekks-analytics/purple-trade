@@ -347,6 +347,7 @@ export interface DeskView {
   last_error?: string | null
   market_name?: string
   coach?: DeskCoach
+  guard?: { time: string; kind: 'market' | 'stock'; reason: string }[]
 }
 export interface DeskBacktest {
   from: string
