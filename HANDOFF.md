@@ -7,6 +7,20 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026; Beat the market added 22 Oct)
 
+**Core momentum strategy (22 Oct 2026, ~11:35 IST, commit 1b82261, live as 8ce69ee)**
+- Wide-universe lab (scratchpad only): 97 NSE large+mid caps, 5y daily Yahoo, long only, 8 bps/side, decide on close,
+  fill next open. Picked on 2022-11..2024-10 (NIFTY +17%/yr), judged on 2024-10..2026-10 (NIFTY -3.3%/yr, unseen).
+  Top in-sample strategies (+60-73%/yr) lost up to 22%/yr out of sample WITHOUT a market filter. With the filter
+  (in stocks only while NIFTY > its 200-day average) 3-month momentum was positive out of sample in 17/18 settings
+  (top 5, monthly: +4.3%/yr, max DD -9.4%); 49% of out-of-sample days were in cash. Survivorship bias: today's list.
+- `purple_api/leaders.py`: WIDE (96 symbols), PICKS 5, LOOKBACK 63, HOLD 21, TREND 200, WEIGHT 0.19. `regime`,
+  `strongest`, `today` use only closes before the day. desk_routes: `refresh_daily` (once per weekday from 08:30, ~97
+  daily downloads in a thread), `core_for` (stored per day under `deskcore:` + bot id; stale daily data -> off),
+  `decide` -> winner "core", by "rule:core" (no AI call) while on; else the five agents on the 10 base stocks only
+  (`coach.base_panel`). Panel symbols = base + every stock the core ever picked (new picks fetch 1mo of 30m bars).
+  View: `core` block + a 6th agent card; Dashboard shows "Mode: ...". On 22 Oct NIFTY was 5.3% below its 200-day
+  average (last above 26 Feb 2026), so the core is OFF; it would hold COFORGE, DIVISLAB, KOTAKBANK, TVSMOTOR, HCLTECH.
+
 **Research 22 Oct 2026 (late morning): what was tested and rejected (do not redo without new data)**
 - Replays on real Yahoo prices (60 days of 5m + 30m, 2 years daily, 4 years annual fundamentals), judge-by-record,
   fees and slippage included. Windows: last 40/20/10 trading days to 22 Oct.
