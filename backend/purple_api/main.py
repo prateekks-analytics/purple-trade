@@ -378,6 +378,7 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
             f = dist / path
             if path and f.is_file() and dist in f.resolve().parents:
                 return FileResponse(f)
-            return FileResponse(dist / "index.html")
+            # the page itself is never cached, so a new version shows on the next visit (assets have hashed names)
+            return FileResponse(dist / "index.html", headers={"Cache-Control": "no-cache"})
 
     return app
