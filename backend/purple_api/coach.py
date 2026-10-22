@@ -9,6 +9,7 @@ decisions that followed a rule with decisions that saw it and did not.
 CLI (no server needed, reads the same database):
     python -m purple_api.coach review [--day YYYY-MM-DD]   writes coach/reviews/<day>.md and .json
     python -m purple_api.coach check                        validates playbook.md and lists the active rules
+    python -m purple_api.coach compare [--days 40 20 10]    one winner vs team mixes, replayed without AI
 """
 from __future__ import annotations
 
@@ -328,6 +329,34 @@ def write_review(pack: dict) -> Path:
     return md
 
 
+def compare_styles(p: desk.Panel, days: int, capital: float = 500_000) -> dict:
+    """Replay the last `days` trading days without AI: one winner (the desk's way) vs a team mix of all agents
+    (equal, or weighted by positive two-day records). Returns % return and trades per style, plus NIFTY."""
+    start = max(5 * desk.BARS_PER_DAY, len(p) - days * desk.BARS_PER_DAY)
+    s0 = max(0, start - desk.RECORD_BARS - 1)
+    sh = desk.shadows(p, capital, start=s0)
+    bt = desk.backtest(p, capital, start)
+    out = {"days": days, "nifty_pct": bt["market_pct"],
+           "one winner": {"pct": bt["return_pct"], "trades": len(bt["sim"]["trades"])}}
+    for name in ("team equal", "team by record"):
+        targets = {}
+        for t in range(start, len(p)):
+            if name == "team equal":
+                w = {a: 1 / len(desk.AGENT_IDS) for a in desk.AGENT_IDS}
+            else:
+                recs = {a: desk.record(sh["agents"][a]["sim"], s0, t) for a in desk.AGENT_IDS}
+                pos = {a: max(0.0, r) for a, r in recs.items() if r is not None}
+                w = {a: v / sum(pos.values()) for a, v in pos.items()} if sum(pos.values()) > 0 else {}
+            mix: dict[str, float] = {}
+            for a, wa in w.items():
+                for s, x in sh["agents"][a]["proposals"][t].items():
+                    mix[s] = mix.get(s, 0) + wa * x
+            targets[t] = {s: min(x, desk.MAX_WEIGHT) for s, x in mix.items() if x > 0.01}
+        sim = desk.simulate(p, targets, capital, start)
+        out[name] = {"pct": round((sim["equity"][-1]["value"] / capital - 1) * 100, 2), "trades": len(sim["trades"])}
+    return out
+
+
 def pick_bot(db) -> dict | None:
     bots = db.list_desks()
     return next((b for b in bots if b["status"] == "running"), None) or next(iter(bots), None)
@@ -343,6 +372,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--day")
     r.add_argument("--bot")
     sub.add_parser("check", help="validate playbook.md")
+    c = sub.add_parser("compare", help="replay one winner vs team mixes (no AI)")
+    c.add_argument("--days", type=int, nargs="*", default=[40, 20, 10])
     a = ap.parse_args(argv)
     sys.stdout.reconfigure(encoding="utf-8")
     if a.cmd == "check":
@@ -357,6 +388,13 @@ def main(argv: list[str] | None = None) -> int:
             print("ERROR:", e)
         return 1 if errs else 0
     db = default_store()
+    if a.cmd == "compare":
+        p = load_panel(db)
+        for d in a.days:
+            r = compare_styles(p, d)
+            print(f"{d} days (NIFTY {r['nifty_pct']:+.2f}%): " + "; ".join(
+                f"{k} {v['pct']:+.2f}% ({v['trades']} trades)" for k, v in r.items() if isinstance(v, dict)))
+        return 0
     bot = db.get_desk(a.bot) if a.bot else pick_bot(db)
     if not bot:
         print("No desk bot in the database yet.")

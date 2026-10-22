@@ -280,3 +280,9 @@ def test_free_ai_chain_groq_first_then_gemini(monkeypatch):
         pv.ChainProvider([Down()]).complete("s", [])
     monkeypatch.delenv("GROQ_API_KEY")
     assert isinstance(pv.default_provider(), pv.GeminiProvider)  # unchanged without a Groq key
+
+
+def test_compare_styles_reports_each_way_of_choosing():
+    r = coach.compare_styles(panel(), 10)
+    assert set(r) == {"days", "nifty_pct", "one winner", "team equal", "team by record"}
+    assert all(isinstance(r[k]["pct"], float) and r[k]["trades"] >= 0 for k in ("one winner", "team equal", "team by record"))
