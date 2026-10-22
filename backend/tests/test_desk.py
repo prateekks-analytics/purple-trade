@@ -286,3 +286,8 @@ def test_compare_styles_reports_each_way_of_choosing():
     r = coach.compare_styles(panel(), 10)
     assert set(r) == {"days", "nifty_pct", "one winner", "team equal", "team by record"}
     assert all(isinstance(r[k]["pct"], float) and r[k]["trades"] >= 0 for k in ("one winner", "team equal", "team by record"))
+
+
+def test_chief_aims_for_maximum_return_not_just_the_index():
+    assert "highest return" in desk.CHIEF_SYSTEM and "only the minimum" in desk.CHIEF_SYSTEM
+    assert "highest return" in desk.LESSON_SYSTEM
