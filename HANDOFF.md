@@ -8,6 +8,12 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 ## Current state (15 Oct 2026; Beat the market added 22 Oct)
 
 **Purple Desk online: Render + Hugging Face dataset backup (22 Oct 2026, morning after)**
+- LIVE since 22 Oct ~10:12 IST: https://purple-desk-qgjw.onrender.com (Render service srv-dbcp75lg1s2s73e2jk70,
+  Blueprint purple-desk, commit 748ff42). Password = PURPLE_PASSWORD (user typed it; any user name). The laptop
+  server was stopped at 10:10 after a fresh DB upload; do NOT start `purple-api` on 8780 with the live loop again
+  while the online bot runs (two bots). `purple/coach/hub.txt` = the state dataset, so `/coach-bot` works online.
+- Keep-awake: the server pings its own RENDER_EXTERNAL_URL every 10 min (only when sync is on). GitHub workflow
+  version parked at `deploy/keep-awake.yml` (gh token lacks `workflow` scope).
 - 22 Oct 09:40 IST the laptop server (8780) was down (lid closed); restarted via preview `purple-api`; Gemini decided
   09:15. Local DB bot f87d385cea46 (open-ended, started 21 Oct 15:30).
 - HF Docker Spaces now need PRO (402 on create; nothing paid). Hosting = a second Render free web service
