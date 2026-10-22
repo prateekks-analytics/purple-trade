@@ -12,6 +12,9 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
   Blueprint purple-desk, commit 748ff42). Password = PURPLE_PASSWORD (user typed it; any user name). The laptop
   server was stopped at 10:10 after a fresh DB upload; do NOT start `purple-api` on 8780 with the live loop again
   while the online bot runs (two bots). `purple/coach/hub.txt` = the state dataset, so `/coach-bot` works online.
+- Local DB bot f87d385cea46 set to 'stopped' (22 Oct 10:20) so the laptop can never run a second copy; the online
+  bot is the truth. Scheduled task `purple-desk-coach` (desktop app, weekdays 16:30 IST, Auto mode) runs /coach-bot
+  on the online state; it runs on next app launch if the app was closed. User chose to keep the public demo.
 - Keep-awake: the server pings its own RENDER_EXTERNAL_URL every 10 min (only when sync is on). GitHub workflow
   version parked at `deploy/keep-awake.yml` (gh token lacks `workflow` scope).
 - 22 Oct 09:40 IST the laptop server (8780) was down (lid closed); restarted via preview `purple-api`; Gemini decided
