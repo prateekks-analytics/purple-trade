@@ -110,9 +110,18 @@ def check(rules: list[dict], text: str) -> list[str]:
 
 # ---------- shared desk helpers (used by desk_routes too) ----------
 
-def load_panel(db) -> desk.Panel:
-    return desk.align({s: db.get_market_bars(s, desk.INTERVAL) for s in desk.UNIVERSE},
+def load_panel(db, syms: list[str] | None = None) -> desk.Panel:
+    """30-minute panel; by default the base stocks plus every stock the core picked (all 30-minute data stored)."""
+    if syms is None:
+        have = {r for r in db.market_symbols(desk.INTERVAL)} if hasattr(db, "market_symbols") else set()
+        syms = desk.UNIVERSE + sorted(have - set(desk.UNIVERSE) - {desk.MARKET})
+    return desk.align({s: db.get_market_bars(s, desk.INTERVAL) for s in syms},
                       db.get_market_bars(desk.MARKET, desk.INTERVAL))
+
+
+def base_panel(p: desk.Panel) -> desk.Panel:
+    """Only the 10 base stocks: the five agents never trade the core's picks."""
+    return desk.Panel(p.times, {s: b for s, b in p.bars.items() if s in desk.UNIVERSE}, p.market)
 
 
 def run_book(db, bot: dict, p: desk.Panel) -> tuple[dict, int, dict]:
@@ -214,7 +223,7 @@ def build_review(db, bot: dict, day: str | None = None, p: desk.Panel | None = N
     day = day or latest_day(ds)
     idx = {t: i for i, t in enumerate(p.times)}
     todays = sorted(t for t in ds if t.startswith(day or "~") and t in idx)
-    names = {a["id"]: a["name"] for a in desk.AGENTS}
+    names = {a["id"]: a["name"] for a in desk.AGENTS + [desk.CORE]}
     rules = read_playbook()
     pack = {"bot": {k: bot[k] for k in ("id", "name", "capital", "days", "start_time", "status")}, "day": day,
             "data_time": p.times[-1] if len(p) else None, "decisions": [],
@@ -227,7 +236,7 @@ def build_review(db, bot: dict, day: str | None = None, p: desk.Panel | None = N
     first_bar = min(i for i, t in enumerate(p.times) if t.startswith(day))
     s0 = max(0, i0 - desk.RECORD_BARS - 3 * desk.BARS_PER_DAY)
     ms = db.get_decisions(f"deskmood:{bot['id']}")
-    sh = desk.shadows(p, bot["capital"], mood_index(p, ms), start=s0)
+    sh = desk.shadows(base_panel(p), bot["capital"], mood_index(p, ms), start=s0)
     mkt = sh["market"]
     eq = book["equity"]
     base = first_bar - 1 if first_bar - 1 >= start else start
@@ -344,6 +353,7 @@ def compare_styles(p: desk.Panel, days: int, capital: float = 500_000) -> dict:
     (equal, or weighted by positive two-day records). Returns % return and trades per style, plus NIFTY."""
     start = max(5 * desk.BARS_PER_DAY, len(p) - days * desk.BARS_PER_DAY)
     s0 = max(0, start - desk.RECORD_BARS - 1)
+    p = base_panel(p)
     sh = desk.shadows(p, capital, start=s0)
     bt = desk.backtest(p, capital, start)
     out = {"days": days, "nifty_pct": bt["market_pct"],

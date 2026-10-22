@@ -10,6 +10,7 @@ import type { Marker } from './LineChart'
 
 export const AGENT_ICON: Record<string, ReactNode> = {
   momentum: <IconBolt />, trend: <IconTrend />, dip: <IconWave />, news: <IconNews />, guard: <IconShield />,
+  core: <IconTrend />,
 }
 
 export function AgentMark({ id, size = 'md' }: { id: string; size?: 'sm' | 'md' | 'lg' }) {

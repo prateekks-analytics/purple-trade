@@ -283,6 +283,9 @@ class Store:
             self._db.commit()
             return self._db.total_changes - before
 
+    def market_symbols(self, interval: str) -> list[str]:
+        return [r[0] for r in self._q("SELECT DISTINCT symbol FROM market_bars WHERE interval=?", (interval,)).fetchall()]
+
     def get_market_bars(self, symbol: str, interval: str) -> list[Bar]:
         rows = self._q("SELECT ts,open,high,low,close,volume FROM market_bars WHERE symbol=? AND interval=? ORDER BY ts",
                        (symbol, interval)).fetchall()

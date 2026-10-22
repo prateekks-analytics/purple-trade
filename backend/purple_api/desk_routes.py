@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from . import coach, desk, market, news
+from . import coach, desk, leaders, market, news
 from .store import Store
 
 COMPANY = {"RELIANCE.NS": "Reliance Industries", "HDFCBANK.NS": "HDFC Bank", "ICICIBANK.NS": "ICICI Bank",
@@ -56,7 +56,7 @@ def next_bar_close(now: datetime) -> datetime:
 
 def register(app: FastAPI, db: Store):
     state = {"fetched": {}, "last_error": None, "busy": False, "mood_at": {}, "lessons_done": set(),
-             "backtest": None, "guard_pause": 0.0}
+             "backtest": None, "guard_pause": 0.0, "daily_day": None, "daily_busy": False, "have30m": set()}
     lock = threading.Lock()
 
     def ai():
@@ -73,19 +73,64 @@ def register(app: FastAPI, db: Store):
             _download(range_)
 
     def _download(range_: str) -> None:
-        for s in SYMBOLS:
+        for s in symbols():
+            # a stock the core just picked gets a month of history first, so its chart and costs are right
+            rng = range_ if s in state["have30m"] or s in SYMBOLS else "1mo"
             try:
-                db.upsert_bars(s, desk.INTERVAL, market.intraday_bars(s, desk.INTERVAL, range_))
+                db.upsert_bars(s, desk.INTERVAL, market.intraday_bars(s, desk.INTERVAL, rng))
+                state["have30m"].add(s)
             except market.MarketError as e:
                 state["last_error"] = f"{desk.short(s)}: {e}"
                 if isinstance(e, market.RateLimited):
                     break
 
+    def core_history(bot: dict | None = None) -> dict[str, dict]:
+        bot = bot or running() or next(iter(db.list_desks()), None)
+        return db.get_decisions(f"deskcore:{bot['id']}") if bot else {}
+
+    def symbols() -> list[str]:
+        """The 10 base stocks, NIFTY, and every stock the core has picked for this bot."""
+        extra = sorted({s for c in core_history().values() for s in c.get("picks", [])} - set(SYMBOLS))
+        return SYMBOLS + extra
+
     def panel() -> desk.Panel:
         mkt = db.get_market_bars(desk.MARKET, desk.INTERVAL)
         if len(mkt) < 60:
             raise HTTPException(503, "Not enough 30-minute prices yet. Check the internet connection and try again.")
-        return coach.load_panel(db)
+        return coach.load_panel(db, [s for s in symbols() if s != desk.MARKET])
+
+    def base(p: desk.Panel) -> desk.Panel:
+        return coach.base_panel(p)
+
+    # ----- the core: momentum leaders while NIFTY is in an uptrend (see leaders.py) -----
+    def refresh_daily() -> None:
+        """Once a day: two years of daily prices for the wide list and NIFTY (about 97 small downloads)."""
+        try:
+            for s in leaders.WIDE + [desk.MARKET]:
+                try:
+                    db.upsert_bars(s, "1d", market.daily_bars(s, "2y"))
+                except market.RateLimited:
+                    time.sleep(30)
+                except market.MarketError:
+                    continue
+                time.sleep(0.3)
+            state["daily_day"] = datetime.now(market.IST).date().isoformat()
+        finally:
+            state["daily_busy"] = False
+
+    def core_for(bot: dict, day: str) -> dict:
+        """The core's state for `day`, computed once and stored (so every decision that day agrees)."""
+        hist = db.get_decisions(f"deskcore:{bot['id']}")
+        if day in hist:
+            return hist[day]
+        mk = db.get_market_bars(desk.MARKET, "1d")
+        if not mk or mk[-1].date[:10] < (datetime.strptime(day, "%Y-%m-%d") - timedelta(days=5)).strftime("%Y-%m-%d"):
+            return {"on": False, "picks": [], "refreshed": None, "gap_pct": None, "stale": True}
+        prev = hist[max(hist)] if hist else None
+        daily = {s: db.get_market_bars(s, "1d") for s in leaders.WIDE}
+        got = leaders.today(prev, {s: r for s, r in daily.items() if r}, mk, day)
+        db.save_decision(f"deskcore:{bot['id']}", day, got)
+        return got
 
     def stale(p: desk.Panel, now: datetime) -> bool:
         """True when a newer bar than the newest stored one has completed."""
@@ -119,6 +164,7 @@ def register(app: FastAPI, db: Store):
         return coach.run_book(db, bot, p)
 
     def decide(bot: dict, p: desk.Panel, t: int) -> dict:
+        full, p = p, base(p)
         s0 = max(0, t - desk.RECORD_BARS - 3 * desk.BARS_PER_DAY)
         sh = desk.shadows(p, bot["capital"], coach.mood_index(p, moods(bot)), start=s0)
         props = {a: sh["agents"][a]["proposals"][t] for a in desk.AGENT_IDS}
@@ -129,6 +175,14 @@ def register(app: FastAPI, db: Store):
         mood = ms[max(ms)]["scores"] if ms else None
         out = {"time": p.times[t], "records": {a: None if r is None else round(r * 100, 2) for a, r in recs.items()},
                "proposals": {a: {desk.short(s): w for s, w in v.items()} for a, v in props.items()}}
+        core = core_for(bot, p.times[t][:10])
+        if core["on"] and core["picks"] and all(s in full.bars for s in core["picks"]):
+            names = ", ".join(desk.short(s) for s in core["picks"])
+            return {**out, "winner": "core", "targets": {s: leaders.WEIGHT for s in core["picks"]}, "debate": [],
+                    "confidence": None, "by": "rule:core",
+                    "reason": f"NIFTY 50 is above its 200-day average, so the core strategy holds the 5 strongest stocks "
+                              f"of the last 3 months out of {len(leaders.WIDE)} large and mid caps: {names}. "
+                              "It refreshes them every 21 trading days."}
         prov = ai()
         if prov:
             rules = coach.live_rules()
@@ -258,6 +312,9 @@ def register(app: FastAPI, db: Store):
         ist = now.astimezone(market.IST)
         hm = (ist.hour, ist.minute)
         in_session = ist.weekday() < 5 and (9, 16) <= hm <= (15, 30)
+        if ist.weekday() < 5 and hm >= (8, 30) and state["daily_day"] != ist.date().isoformat() and not state["daily_busy"]:
+            state["daily_busy"] = True
+            threading.Thread(target=refresh_daily, name="purple-daily", daemon=True).start()
         if ist.weekday() >= 5 or not (in_session or (9, 45) <= hm <= (16, 15)):
             return
         state["busy"] = True
@@ -305,11 +362,15 @@ def register(app: FastAPI, db: Store):
                 cost[tr["symbol"]] = [q - tr["qty"], c * (q - tr["qty"]) / q]
         holdings = [{**h, "avg": round(cost[h["symbol"]][1] / cost[h["symbol"]][0], 2) if cost.get(h["symbol"], [0])[0] else None}
                     for h in book["holdings"]]
-        names = {a["id"]: a["name"] for a in desk.AGENTS}
+        names = {a["id"]: a["name"] for a in desk.AGENTS + [desk.CORE]}
         wins = Counter(d["winner"] for d in ds.values())
         latest = ds[max(ds)] if ds else None
         agents = [{**a, "record_pct": latest["records"].get(a["id"]) if latest else None, "wins": wins.get(a["id"], 0),
                    "proposal": latest["proposals"].get(a["id"], {}) if latest else {}} for a in desk.AGENTS]
+        ch = core_history(bot)
+        core = ch[max(ch)] if ch else {"on": False, "picks": [], "gap_pct": None}
+        agents.append({**desk.CORE, "record_pct": None, "wins": wins.get("core", 0),
+                       "proposal": {desk.short(s): leaders.WEIGHT for s in core.get("picks", [])}})
         ms = moods(bot)
         mood_t = max(ms) if ms else None
         is_done = finished(bot, p)
@@ -332,6 +393,8 @@ def register(app: FastAPI, db: Store):
             "ai": bool(ai()), "last_error": state["last_error"], "market_name": desk.MARKET_NAME,
             "universe": [desk.short(s) for s in desk.UNIVERSE],
             "coach": coach_view(bot, p, book, start, ds),
+            "core": {"on": bool(core.get("on")), "picks": [desk.short(x) for x in core.get("picks", [])],
+                     "gap_pct": core.get("gap_pct"), "refreshed": core.get("refreshed"), "pool": len(leaders.WIDE)},
             "guard": [{"time": e["time"], "kind": e["kind"], "reason": e["reason"]}
                       for e in coach.guard_events(db, bot, datetime.now(market.IST).date().isoformat())],
         }
@@ -425,7 +488,7 @@ def register(app: FastAPI, db: Store):
         if hit and hit[0] == key and time.time() - hit[1] < BACKTEST_TTL:
             return hit[2]
         fetch("60d", BACKTEST_TTL)
-        p = panel()
+        p = base(panel())
         start = max(5 * desk.BARS_PER_DAY, len(p) - days * desk.BARS_PER_DAY)
         bt = desk.backtest(p, capital, start)
         m0 = p.market[start].close
@@ -433,7 +496,7 @@ def register(app: FastAPI, db: Store):
         series = [{"time": e["time"], "value": e["value"], "market": round(capital * p.market[start + i].close / m0, 2)}
                   for i, e in enumerate(eq)][::3]
         weeks = desk.weekly(p, bt["sim"], start, capital)
-        names = {a["id"]: a["name"] for a in desk.AGENTS}
+        names = {a["id"]: a["name"] for a in desk.AGENTS + [desk.CORE]}
         res = {"from": p.times[start], "to": p.times[-1], "capital": capital, "return_pct": bt["return_pct"],
                "market_pct": bt["market_pct"], "edge": round(eq[-1]["value"] - capital * (1 + bt["market_pct"] / 100)),
                "trades": len(bt["sim"]["trades"]), "series": series, "weeks": weeks,

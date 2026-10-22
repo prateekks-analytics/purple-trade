@@ -348,6 +348,7 @@ export interface DeskView {
   market_name?: string
   coach?: DeskCoach
   guard?: { time: string; kind: 'market' | 'stock'; reason: string }[]
+  core?: { on: boolean; picks: string[]; gap_pct: number | null; refreshed: string | null; pool: number }
 }
 export interface DeskBacktest {
   from: string

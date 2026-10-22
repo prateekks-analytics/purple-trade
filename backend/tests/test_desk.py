@@ -102,7 +102,8 @@ def test_start_bot_ai_chief_decides_and_view(client):
     v = c.get("/api/desk").json()
     d = v["decisions"][0]
     assert d["winner"] == "trend" and d["targets"] == {"INFY": 0.3} and d["by"].startswith("gemini")
-    assert v["mood"]["scores"]["INFY"]["score"] == 0.7 and len(v["agents"]) == 5
+    assert v["mood"]["scores"]["INFY"]["score"] == 0.7 and [a["id"] for a in v["agents"]][-1] == "core" and len(v["agents"]) == 6
+    assert v["core"]["on"] is False  # no daily prices in this test: the agents trade
     assert "<data>" in prov.calls[0][-1]["content"]
     assert c.post("/api/desk/stop").json()["bot"]["status"] == "stopped"
 
@@ -336,3 +337,58 @@ def test_guard_in_the_live_loop(client, monkeypatch):
     assert not book["holdings"]
     c.app.state.desk_tick(now + timedelta(minutes=1))
     assert len(coach.guard_events(db, bot)) == 1  # one market sale per day
+
+
+def daily_line(n, start=100.0, step=0.5, day0=datetime(2025, 1, 1)):
+    from purple_api.engine import Bar
+    out, d = [], day0
+    while len(out) < n:
+        if d.weekday() < 5:
+            c = start + step * len(out)
+            out.append(Bar(d.strftime("%Y-%m-%d"), c, c, c, c, 1000.0))
+        d += timedelta(days=1)
+    return out
+
+
+def test_core_regime_picks_and_monthly_hold():
+    from purple_api import leaders
+    up, down = daily_line(260, step=1.0), daily_line(260, start=400, step=-1.0)
+    day = "2026-02-01"
+    assert leaders.regime(up, day)["on"] and not leaders.regime(down, day)["on"]
+    assert leaders.regime(up[:100], day)["on"] is False  # not enough history: stay out
+    daily = {f"S{k}.NS": daily_line(260, step=0.1 * k) for k in range(8)}
+    assert leaders.strongest(daily, day) == ["S7.NS", "S6.NS", "S5.NS", "S4.NS", "S3.NS"]
+    # no look-ahead: only closes before the day count
+    assert leaders.strongest(daily, up[100].date) == leaders.strongest({s: r[:100] for s, r in daily.items()}, up[100].date)
+    first = leaders.today(None, daily, up, up[230].date)
+    assert first["on"] and first["refreshed"] == up[230].date and len(first["picks"]) == 5
+    kept = leaders.today(first, daily, up, up[240].date)  # rankings may move; picks are held 21 days
+    assert kept["picks"] == first["picks"] and kept["refreshed"] == first["refreshed"]
+    later = leaders.today(first, daily, up, up[255].date)
+    assert later["refreshed"] == up[255].date
+    assert leaders.today(first, daily, down, day) == {"on": False, "picks": [], "refreshed": None,
+                                                     "gap_pct": leaders.regime(down, day)["gap_pct"]}
+
+
+def test_core_takes_over_in_an_uptrend(client, monkeypatch):
+    from purple_api import leaders
+    c = client(FakeProvider())
+    db = c.app.state.store
+    c.post("/api/desk", json={"capital": 500000, "days": 0})
+    p = coach.load_panel(db)
+    last_day = datetime.strptime(p.times[-1][:10], "%Y-%m-%d")
+    day0 = last_day - timedelta(days=364)  # 260 weekdays ending the day before the last bar
+    nifty = daily_line(260, step=1.0, day0=day0)
+    assert nifty[-1].date < p.times[-1][:10]
+    db.upsert_bars(desk.MARKET, "1d", nifty)
+    monkeypatch.setattr(leaders, "WIDE", ["INFY.NS", "TCS.NS", "LT.NS", "SBIN.NS", "ITC.NS", "AXISBANK.NS"])
+    for k, s in enumerate(leaders.WIDE):
+        db.upsert_bars(s, "1d", daily_line(260, step=0.2 * (k + 1), day0=day0))
+    bot = db.list_desks()[0]
+    key = f"desk:{bot['id']}"
+    db._q("DELETE FROM agent_decisions WHERE cache_key=?", (key,))
+    c.post("/api/desk/decide")
+    d = c.get("/api/desk").json()
+    assert d["decisions"][0]["winner"] == "core" and d["decisions"][0]["by"] == "rule:core"
+    assert set(d["decisions"][0]["targets"]) == {"AXISBANK", "ITC", "SBIN", "LT", "TCS"}
+    assert d["core"]["on"] and d["agents"][-1]["proposal"] and "200-day" in d["decisions"][0]["reason"]

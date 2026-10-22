@@ -36,6 +36,8 @@ AGENTS = [
     {"id": "guard", "name": "Risk guard", "style": "Owns the whole basket while the market is calm and moves to cash when NIFTY turns down."},
 ]
 AGENT_IDS = [a["id"] for a in AGENTS]
+CORE = {"id": "core", "name": "Momentum leaders (core)",
+        "style": "While NIFTY 50 is above its 200-day average: holds the 5 strongest stocks of the last 3 months out of about 96 large and mid caps, refreshed monthly."}
 
 
 def short(sym: str) -> str:
