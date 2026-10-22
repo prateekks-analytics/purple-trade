@@ -93,6 +93,7 @@ Append to `coach/journal.md`:
 
 ```
 ## <today's date> · review of <day>
+- Summary: <two plain sentences for the owner: how the day went and what changed; few numbers, no jargon>
 - Result: company <x>% vs NIFTY <y>% vs old-bot twin <z>%, <n> decisions, <k> trades.
 - Good calls: <1-3 bullets, judged on what it knew>
 - Mistakes: <1-3 bullets, judged on what it knew>
@@ -111,5 +112,5 @@ HF upload <dataset> coach/journal.md coach/journal.md --repo-type dataset --comm
 HF upload <dataset> coach/reviews coach/reviews --repo-type dataset --commit-message "Coach review <date>"
 ```
 
-The bot picks up a new playbook within 10 minutes; no restart needed. Finish with two or three plain sentences for
+The bot picks up a new playbook within 10 minutes and shows the journal in its Daily review tab; no restart needed. Finish with two or three plain sentences for
 the user: how the company did against NIFTY and the twin, and what changed in the playbook.

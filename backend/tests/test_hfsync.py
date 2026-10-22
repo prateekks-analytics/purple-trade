@@ -110,3 +110,17 @@ def test_password_gate(monkeypatch):
     assert c.get("/api/desk", headers={"Authorization": "Basic !!!"}).status_code == 401
     ok = base64.b64encode(b"anyone:s3cret").decode()
     assert c.get("/api/desk", headers={"Authorization": f"Basic {ok}"}).status_code == 200
+
+
+def test_journal_is_pulled_only(tmp_path):
+    coach = tmp_path / "coach"
+    hub = FakeHub({"coach/journal.md": b"## 2026-10-22 \xc2\xb7 review of 2026-10-22\n"})
+    s = hfsync.Sync(hub, tmp_path / "x.sqlite3", coach)
+    s.restore()
+    assert (coach / "journal.md").read_bytes() == hub.files["coach/journal.md"]
+    assert s.pull_journal() is False  # unchanged
+    hub.files["coach/journal.md"] += b"## 2026-10-23 \xc2\xb7 review of 2026-10-23\n"
+    (coach / "journal.md").write_bytes(b"local edit")
+    assert s.pull_journal() is True and (coach / "journal.md").read_bytes() == hub.files["coach/journal.md"]
+    s.tick(force=True)
+    assert "coach/journal.md" not in hub.uploads  # never uploaded from the server

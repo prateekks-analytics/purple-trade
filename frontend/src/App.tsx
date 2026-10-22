@@ -7,8 +7,9 @@ import { Build } from './components/Build'
 import { BotBrain } from './components/BotBrain'
 import { Challenge } from './components/Challenge'
 import { Dashboard } from './components/Dashboard'
+import { Review } from './components/Review'
 import { More } from './components/More'
-import { IconBolt, IconMoon, IconOverview, IconSpark, IconSun, Logo } from './components/Icons'
+import { IconBolt, IconLedger, IconMoon, IconOverview, IconSpark, IconSun, Logo } from './components/Icons'
 import { Overview } from './components/Overview'
 import { Palette } from './components/Palette'
 import { useQuotes } from './lib/quotes'
@@ -21,6 +22,7 @@ import { nseStatus, totals, usePortfolio } from './lib/portfolio'
 type Route =
   | { page: 'dashboard' }
   | { page: 'bot' }
+  | { page: 'review' }
   | { page: 'more' }
   | { page: 'overview' }
   | { page: 'race'; id?: string }
@@ -36,6 +38,7 @@ function parseRoute(): Route {
   if (m) return { page: 'strategy', id: m[1] }
   if (h.startsWith('#/build')) return { page: 'build' }
   if (h.startsWith('#/bot')) return { page: 'bot' }
+  if (h.startsWith('#/review')) return { page: 'review' }
   if (h.startsWith('#/more')) return { page: 'more' }
   if (h.startsWith('#/classic')) return { page: 'overview' }
   m = h.match(/^#\/race(?:\/([\w-]+))?/)
@@ -57,6 +60,7 @@ const IconMore = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="non
 const SECTIONS = [
   { page: 'dashboard', hash: '#/', label: 'Dashboard', short: 'Dashboard', icon: <IconOverview />, group: '' },
   { page: 'bot', hash: '#/bot', label: 'How the bot thinks', short: 'Bot', icon: <IconBolt />, group: '' },
+  { page: 'review', hash: '#/review', label: 'Daily review', short: 'Review', icon: <IconLedger />, group: '' },
   { page: 'more', hash: '#/more', label: 'More tools', short: 'More', icon: <IconMore />, group: '' },
 ] as const
 
@@ -121,7 +125,7 @@ export default function App() {
 
   const go = (hash: string) => { if (location.hash !== hash) location.hash = hash; else setRoute(parseRoute()) }
   const open = (sid: string, initial?: string, proposal?: Proposal) => { setIdea(initial); setImported(proposal); go(`#/s/${sid}`) }
-  const section = route.page === 'dashboard' || route.page === 'bot' ? route.page : 'more'
+  const section = route.page === 'dashboard' || route.page === 'bot' || route.page === 'review' ? route.page : 'more'
   const ai = getAi()
 
   useEffect(() => {
@@ -201,6 +205,8 @@ export default function App() {
             <Dashboard />
           ) : route.page === 'bot' ? (
             <BotBrain />
+          ) : route.page === 'review' ? (
+            <Review />
           ) : route.page === 'more' ? (
             <More />
           ) : route.page === 'strategy' ? (

@@ -457,3 +457,34 @@ def test_manager_answer_with_names_or_a_mix_is_accepted():
     assert c["winner"] == "quality"  # overlaps most with the mix
     with pytest.raises(ValueError):
         desk.parse_chief('{"winner":"nobody","targets":{}}', props)
+
+
+JOURNAL = """# Purple Desk coach journal
+
+Intro text.
+
+## 2026-10-22 · review of 2026-10-22
+- Result: company +0.30% vs NIFTY -0.54%; 29 trades.
+- Good calls: moved to cash early.
+- Mistakes: churn.
+  - two cash round trips
+- Playbook: added R1 (trial).
+
+## 2026-10-23 · review of 2026-10-23
+- Summary: A quiet day. The new rule cut trading.
+- Result: company +0.10% vs NIFTY +0.05%.
+"""
+
+
+def test_journal_parse_and_endpoint(client, coach_dir):
+    entries = coach.parse_journal(JOURNAL)
+    assert [e["day"] for e in entries] == ["2026-10-23", "2026-10-22"]  # newest first
+    assert entries[0]["summary"] == "A quiet day. The new rule cut trading."
+    assert [i["label"] for i in entries[0]["items"]] == ["Result"]  # the summary is not repeated as an item
+    old = entries[1]
+    assert old["summary"] is None and old["items"][2] == {"label": "Mistakes", "text": "churn. two cash round trips"}
+    c = client(FakeProvider())
+    assert c.get("/api/desk/journal").json() == {"entries": []}  # no journal yet
+    coach_dir.mkdir(parents=True, exist_ok=True)
+    (coach_dir / "journal.md").write_text(JOURNAL, encoding="utf-8")
+    assert c.get("/api/desk/journal").json()["entries"] == entries

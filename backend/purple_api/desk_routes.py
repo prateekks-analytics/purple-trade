@@ -507,6 +507,11 @@ def register(app: FastAPI, db: Store):
             pack["saved_to"] = str(coach.write_review(pack))
         return pack
 
+    @app.get("/api/desk/journal")
+    def desk_journal():
+        """The coach's daily reviews in plain words (coach/journal.md, pulled from the state dataset online)."""
+        return {"entries": coach.read_journal()}
+
     @app.post("/api/desk/coach/rules/{rule_id}/retire")
     def coach_retire(rule_id: str):
         """Remove a coach rule from what the chief reads (kept in the playbook as retired)."""

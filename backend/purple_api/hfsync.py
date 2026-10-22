@@ -3,7 +3,8 @@
 When HF_TOKEN is set and a state repo is known (PURPLE_STATE_REPO, else <SPACE_AUTHOR_NAME>/purple-desk-state), the
 server restores the SQLite database and the coach playbook from that private dataset at startup, backs the database
 up when it changed (at most every 10 minutes, and on shutdown) and syncs the playbook both ways: Claude uploads a new
-playbook from the laptop after /coach-bot; a rule removed in the app is uploaded from here. Off everywhere else.
+playbook from the laptop after /coach-bot; a rule removed in the app is uploaded from here. The coach journal is only
+pulled (the app shows it in Daily review). Off everywhere else.
 """
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ import tempfile
 import time
 from pathlib import Path
 
-DB_FILE, PLAYBOOK_FILE = "purple.sqlite3", "playbook.md"
+DB_FILE, PLAYBOOK_FILE, JOURNAL_FILE = "purple.sqlite3", "playbook.md", "coach/journal.md"
 EVERY = 600  # seconds between backups / playbook checks
 
 
@@ -91,6 +92,7 @@ class Sync:
             self.coach_dir.mkdir(parents=True, exist_ok=True)
             self.playbook.write_bytes(pb)
             self.pb_sha = _sha(pb)
+        self.pull_journal()
 
     def snapshot(self) -> bytes:
         """A consistent copy of the live database (sqlite's online backup, safe while the server writes)."""
@@ -131,6 +133,16 @@ class Sync:
             return "pushed"
         return "same"
 
+    def pull_journal(self) -> bool:
+        """The coach writes the journal straight to the hub; this copy is read-only, so the hub always wins."""
+        remote = self.hub.download(JOURNAL_FILE)
+        path = self.coach_dir / "journal.md"
+        if remote is None or (path.exists() and path.read_bytes() == remote):
+            return False
+        self.coach_dir.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(remote)
+        return True
+
     def tick(self, force: bool = False) -> None:
         if not self.restored:
             return
@@ -139,6 +151,7 @@ class Sync:
         self.last = time.time()
         try:
             self.sync_playbook()
+            self.pull_journal()
             self.backup()
             self.error = None
         except Exception as e:  # noqa: BLE001 - never stop the live loop; shown in /api/health

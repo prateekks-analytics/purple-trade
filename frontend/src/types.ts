@@ -324,6 +324,8 @@ export interface CoachRule {
   score?: { followed: CoachStat; not_followed: CoachStat; verdict: 'too early' | 'helping' | 'hurting' | 'no clear effect' } | null
 }
 export interface DeskCoach { rules: CoachRule[] }
+export interface JournalItem { label: string; text: string }
+export interface JournalEntry { date: string; day: string; summary: string | null; items: JournalItem[] }
 export interface DeskBot { id: string; name: string; capital: number; days: number; start_time: string; status: 'running' | 'stopped' | 'finished'; created_at: string }
 export interface DeskView {
   bot: DeskBot | null

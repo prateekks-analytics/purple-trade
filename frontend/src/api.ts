@@ -1,5 +1,5 @@
 import type {
-  AgentCall, DeskBacktest, DeskCoach, DeskView, ChallengeCard, CoachResult, Race, AgentImport, AiProvider, MarketStatus, Quote, BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, Review, RunResponse, Strategy,
+  AgentCall, DeskBacktest, DeskCoach, DeskView, JournalEntry, ChallengeCard, CoachResult, Race, AgentImport, AiProvider, MarketStatus, Quote, BacktestResult, Dataset, Health, Job, PaperAccount, PaperView, Proposal, Review, RunResponse, Strategy,
   StrategyDoc, StrategySummary, SuperAgentInfo, Template,
 } from './types'
 import { aiHeaders } from './lib/aiSettings'
@@ -96,6 +96,7 @@ export const api = {
   deskStart: (capital: number, days: number) => req<DeskView>('/api/desk', json('POST', { capital, days })),
   deskStop: () => req<DeskView>('/api/desk/stop', json('POST')),
   deskDecide: () => req<DeskView>('/api/desk/decide', json('POST')),
+  deskJournal: () => req<{ entries: JournalEntry[] }>('/api/desk/journal'),
   coachRetire: (id: string) => req<DeskCoach>(`/api/desk/coach/rules/${encodeURIComponent(id)}/retire`, json('POST')),
   deskBacktest: (days = 40, capital = 500000) => req<DeskBacktest>(`/api/desk/backtest?days=${days}&capital=${capital}`),
   // ----- beat the market -----

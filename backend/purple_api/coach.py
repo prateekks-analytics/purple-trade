@@ -93,6 +93,45 @@ def retire(rule_id: str, today: str | None = None) -> dict:
     return hit
 
 
+# ---------- the journal (one entry per review, shown in the app's Daily review tab) ----------
+
+_ENTRY = re.compile(r"^##\s+(\d{4}-\d{2}-\d{2})\s*·\s*review of\s+(\d{4}-\d{2}-\d{2})", re.I)
+_ITEM = re.compile(r"^-\s+([^:]{1,40}):\s*(.*)$")
+
+
+def parse_journal(text: str) -> list[dict]:
+    """Journal entries newest first: {date, day, summary, items: [{label, text}]}. Lines that are not a new
+    `- Label: text` bullet continue the previous one."""
+    entries, cur = [], None
+    for line in text.splitlines():
+        s = line.strip()
+        m = _ENTRY.match(s)
+        if m:
+            cur = {"date": m[1], "day": m[2], "summary": None, "items": []}
+            entries.append(cur)
+        elif s.startswith("#"):
+            cur = None
+        elif cur is not None and s:
+            it = _ITEM.match(s)
+            if it:
+                cur["items"].append({"label": it[1].strip(), "text": it[2].strip()})
+            elif cur["items"]:
+                cur["items"][-1]["text"] += " " + s.lstrip("- ")
+    for e in entries:
+        summ = next((i for i in e["items"] if i["label"].lower() == "summary"), None)
+        if summ:
+            e["summary"] = summ["text"]
+            e["items"].remove(summ)
+    return sorted(entries, key=lambda e: (e["day"], e["date"]), reverse=True)
+
+
+def read_journal() -> list[dict]:
+    try:
+        return parse_journal((coach_dir() / "journal.md").read_text(encoding="utf-8"))
+    except OSError:
+        return []
+
+
 def check(rules: list[dict], text: str) -> list[str]:
     """Problems with a playbook: unparsed rule headings, duplicate ids, too many live rules, missing why."""
     errs = []
