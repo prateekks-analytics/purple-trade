@@ -102,7 +102,7 @@ def test_start_bot_ai_chief_decides_and_view(client):
     v = c.get("/api/desk").json()
     d = v["decisions"][0]
     assert d["winner"] == "trend" and d["targets"] == {"INFY": 0.3} and d["by"].startswith("gemini")
-    assert v["mood"]["scores"]["INFY"]["score"] == 0.7 and [a["id"] for a in v["agents"]][-1] == "core" and len(v["agents"]) == 6
+    assert v["mood"]["scores"]["INFY"]["score"] == 0.7 and [a["id"] for a in v["agents"]][-1] == "core" and len(v["agents"]) == len(desk.AGENT_IDS) + 1
     assert v["core"]["on"] is False  # no daily prices in this test: the agents trade
     assert "<data>" in prov.calls[0][-1]["content"]
     assert c.post("/api/desk/stop").json()["bot"]["status"] == "stopped"
@@ -118,7 +118,7 @@ def test_without_ai_the_track_record_decides(client):
 
 def test_backtest_endpoint(client):
     r = client(FakeProvider()).get("/api/desk/backtest?days=10").json()
-    assert r["capital"] == 500000 and len(r["agents"]) == 5 and r["series"] and "weeks_beat" in r
+    assert r["capital"] == 500000 and len(r["agents"]) == len(desk.OLD_IDS) and r["series"] and "weeks_beat" in r
 
 
 # ---------- Claude coaches the bot ----------
@@ -173,9 +173,9 @@ def test_chief_prompt_carries_the_playbook_as_data_and_rules_used_is_validated()
     line = text.splitlines()[-1]
     assert line.startswith("<data>Coach playbook: R1: Prefer cash") and "R2 (trial):" in line and line.endswith("</data>")
     assert "Coach playbook" not in desk.chief_prompt(p.times[100], {}, {}, [], 500_000, mkt, 100, None, [])
-    got = desk.parse_chief('{"winner":"guard","rules_used":["r1","R9","R1",3]}', {}, ["R1", "R2"])
+    got = desk.parse_chief('{"winner":"guard","rules_used":["r1","R9","R1",3]}', {"guard": {}}, ["R1", "R2"])
     assert got["rules_used"] == ["R1"]
-    assert desk.parse_chief('{"winner":"guard","rules_used":"R1"}', {}, ["R1"])["rules_used"] == []
+    assert desk.parse_chief('{"winner":"guard","rules_used":"R1"}', {"guard": {}}, ["R1"])["rules_used"] == []
 
 
 def test_live_decision_records_rules_shown_and_used(client, coach_dir):
@@ -222,7 +222,7 @@ def test_review_pack_separates_knowledge_from_outcomes_and_scores_rules(coach_di
     assert set(s["winners"]) <= {"Trend rider", "Risk guard"} and s["trades"] >= 1
     d = pack["decisions"][0]
     assert set(d) == {"time", "knew", "chose", "outcome"} and d["time"].startswith(day)
-    assert {"nifty", "mood", "agents", "rules_shown"} == set(d["knew"]) and len(d["knew"]["agents"]) == 5
+    assert {"nifty", "mood", "agents", "rules_shown"} == set(d["knew"]) and len(d["knew"]["agents"]) == len(desk.AGENT_IDS)
     assert d["knew"]["agents"][1]["case"] == "uptrend"
     o = d["outcome"]
     assert set(o) == {"1", "3", "13"} and set(o["3"]) == {"desk", "nifty", *desk.AGENT_IDS}
@@ -392,3 +392,56 @@ def test_core_takes_over_in_an_uptrend(client, monkeypatch):
     assert d["decisions"][0]["winner"] == "core" and d["decisions"][0]["by"] == "rule:core"
     assert set(d["decisions"][0]["targets"]) == {"AXISBANK", "ITC", "SBIN", "LT", "TCS"}
     assert d["core"]["on"] and d["agents"][-1]["proposal"] and "200-day" in d["decisions"][0]["reason"]
+
+
+def test_every_analyst_in_the_company_proposes_valid_portfolios():
+    p = panel()
+    extra = bars30(300, 50.0)
+    p = desk.align({**{s: b for s, b in p.bars.items()}, "TRENT.NS": extra}, p.market)
+    daily = {s: daily_line(260, step=0.3 + 0.05 * i) for i, s in enumerate(desk.UNIVERSE)}
+    daily[desk.MARKET] = daily_line(260, step=0.5)
+    fund = {s: [{"type": k, "as_of": y, "value": v * (1 + 0.1 * i) * (2 if y == "2025-03-31" else 1)}
+                for y in ("2024-03-31", "2025-03-31") for k, v in
+                (("NetIncome", 10.0), ("TotalRevenue", 100.0), ("StockholdersEquity", 50.0), ("TotalDebt", 5.0))]
+            for i, s in enumerate(desk.UNIVERSE)}
+    ctx = {"daily": desk.daily_context(p, daily), "fund": desk.fundamental_scores(fund, "2026-10-01"),
+           "social": {60: {"INFY.NS": 0.8, "TCS.NS": -0.6}}, "risky": {t: ["TRENT.NS"] for t in range(100, 300)}}
+    sh = desk.shadows(p, 500_000, moods={60: {"INFY.NS": 0.8}}, ctx=ctx)
+    assert set(sh["agents"]) == set(desk.AGENT_IDS)
+    busy = set()
+    for a in desk.AGENT_IDS:
+        for t, w in sh["agents"][a]["proposals"].items():
+            assert sum(w.values()) <= 1.0 + 1e-9 and all(0 < x <= desk.MAX_WEIGHT for x in w.values())
+            assert a == "highbeta" or "TRENT.NS" not in w  # only the risk-taker trades outside the base 10
+            if w:
+                busy.add(a)
+    assert {"growth", "quality", "social", "highbeta", "news"} <= busy
+    assert "TCS.NS" not in sh["agents"]["social"]["proposals"][200]
+
+
+def test_manager_combines_analysts_and_moods_split():
+    props = {"growth": {"INFY.NS": 0.24}, "highbeta": {"TRENT.NS": 0.3}}
+    got = desk.parse_chief('{"winner":"growth","uses":["growth","highbeta","ghost"],"targets":{"INFY":0.3,"TRENT":0.2}}',
+                           props, allowed=desk.UNIVERSE + ["TRENT.NS"])
+    assert got["targets"] == {"INFY.NS": 0.3, "TRENT.NS": 0.2} and got["uses"] == ["growth", "highbeta"]
+    assert desk.parse_chief('{"winner":"growth","targets":{"TRENT":0.2}}', props)["targets"] == {}  # not allowed
+    m = desk.parse_mood('{"INFY":{"news":0.5,"social":-0.4,"why":"x"},"TCS":{"score":0.2}}')
+    assert m["INFY.NS"]["score"] == 0.5 and m["INFY.NS"]["social"] == -0.4 and m["TCS.NS"]["social"] == 0.2
+
+
+def test_old_bot_twin_tracks_the_original_desk(client):
+    c = client(FakeProvider())
+    c.post("/api/desk", json={"capital": 500000, "days": 0})
+    v = c.get("/api/desk").json()
+    assert v["twin"]["value"] > 0 and isinstance(v["twin"]["return_pct"], float)
+    db = c.app.state.store
+    tw = coach.twin(db, db.list_desks()[0], coach.load_panel(db))
+    assert tw["equity"][0]["value"] == 500000
+
+
+def test_without_ai_only_the_original_five_are_followed(client):
+    c = client(FakeProvider())
+    c.post("/api/desk", json={"capital": 300000, "days": 0})
+    c.post("/api/desk/decide")
+    d = c.get("/api/desk").json()["decisions"][0]
+    assert d["by"] == "record" and d["winner"] in desk.OLD_IDS

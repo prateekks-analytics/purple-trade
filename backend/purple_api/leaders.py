@@ -48,6 +48,22 @@ def strongest(daily: dict[str, list[Bar]], day: str, n: int = PICKS) -> list[str
     return sorted(ret, key=ret.get, reverse=True)[:n]
 
 
+def risky(daily: dict[str, list[Bar]], day: str, n: int = 3) -> list[str]:
+    """For the high-beta specialist: the most volatile stocks (63-day spread of daily moves) that are rising
+    (20-day return above 0 and price above the 50-day average), using closes before `day`."""
+    out = {}
+    for s, rows in daily.items():
+        c = _before(rows, day)
+        if len(c) < 64:
+            continue
+        moves = [c[i] / c[i - 1] - 1 for i in range(len(c) - 63, len(c))]
+        mean = sum(moves) / len(moves)
+        vol = (sum((m - mean) ** 2 for m in moves) / len(moves)) ** 0.5
+        if c[-1] / c[-21] - 1 > 0 and c[-1] > sum(c[-50:]) / 50:
+            out[s] = vol
+    return sorted(out, key=out.get, reverse=True)[:n]
+
+
 def today(prev: dict | None, daily: dict[str, list[Bar]], market_daily: list[Bar], day: str) -> dict:
     """The core's state for `day`. Picks are kept for HOLD trading days while the uptrend lasts."""
     r = regime(market_daily, day)

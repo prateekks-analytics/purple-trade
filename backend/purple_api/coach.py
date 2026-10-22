@@ -145,12 +145,56 @@ def guard_events(db, bot: dict, day: str | None = None) -> list[dict]:
     return [{**e, "at": k} for k, e in sorted(evs.items()) if day is None or e["day"] == day]
 
 
-def mood_index(p: desk.Panel, ms: dict[str, dict]) -> dict[int, dict[str, float]]:
+def mood_index(p: desk.Panel, ms: dict[str, dict], key: str = "score") -> dict[int, dict[str, float]]:
+    """Mood reads by panel bar. key "score" = news mood, "social" = trader-post mood (older reads: news only)."""
     out = {}
     for ts, m in ms.items():
         i = max((i for i, t in enumerate(p.times) if t <= ts), default=None)
         if i is not None:
-            out[i] = {s: v["score"] for s, v in m["scores"].items()}
+            out[i] = {s: v.get(key, v["score"]) for s, v in m["scores"].items()}
+    return out
+
+
+def context(db, bot: dict | None, p: desk.Panel) -> dict:
+    """What the analysts need besides 30-minute prices: daily trends, company figures, social mood, risky picks."""
+    daily = {s: db.get_market_bars(s, "1d") for s in desk.UNIVERSE + [desk.MARKET]}
+    ctx = {"daily": desk.daily_context(p, {s: r for s, r in daily.items() if r})}
+    fund = db.get_decisions("deskfund")
+    if fund and len(p):
+        ctx["fund"] = desk.fundamental_scores(fund[max(fund)], p.times[-1])
+    if bot:
+        ctx["social"] = mood_index(p, db.get_decisions(f"deskmood:{bot['id']}"), "social")
+        risky = db.get_decisions(f"deskrisky:{bot['id']}")
+        ctx["risky"] = {i: risky[t[:10]]["picks"] for i, t in enumerate(p.times) if t[:10] in risky}
+    return ctx
+
+
+_TWIN: dict = {}
+
+
+def twin(db, bot: dict, p: desk.Panel) -> dict | None:
+    """The original desk (5 agents, best two-day record, no AI) run silently on the same money since the bot's
+    start, to measure whether the analyst company does better."""
+    key = (bot["id"], p.times[-1] if len(p) else None, len(p))
+    if key in _TWIN:
+        return _TWIN[key]
+    start = p.times.index(bot["start_time"]) if bot["start_time"] in p.times else \
+        next((i for i, t in enumerate(p.times) if t >= bot["start_time"]), None)
+    if start is None:
+        return None
+    b = base_panel(p)
+    s0 = max(0, start - desk.RECORD_BARS - 1)
+    sh = desk.shadows(b, bot["capital"], mood_index(b, db.get_decisions(f"deskmood:{bot['id']}")), start=s0,
+                      agents=desk.OLD_IDS)
+    targets, cur = {}, None
+    for t in range(start, len(b)):
+        cur = desk.judge(sh, s0, t, cur)
+        targets[t] = sh["agents"][cur]["proposals"][t]
+    sim = desk.simulate(b, targets, bot["capital"], start)
+    out = {"equity": sim["equity"], "value": sim["equity"][-1]["value"],
+           "return_pct": round((sim["equity"][-1]["value"] / bot["capital"] - 1) * 100, 2)}
+    _TWIN.clear()
+    _TWIN[key] = out
     return out
 
 
@@ -236,7 +280,7 @@ def build_review(db, bot: dict, day: str | None = None, p: desk.Panel | None = N
     first_bar = min(i for i, t in enumerate(p.times) if t.startswith(day))
     s0 = max(0, i0 - desk.RECORD_BARS - 3 * desk.BARS_PER_DAY)
     ms = db.get_decisions(f"deskmood:{bot['id']}")
-    sh = desk.shadows(base_panel(p), bot["capital"], mood_index(p, ms), start=s0)
+    sh = desk.shadows(p, bot["capital"], mood_index(p, ms), start=s0, ctx=context(db, bot, p))
     mkt = sh["market"]
     eq = book["equity"]
     base = first_bar - 1 if first_bar - 1 >= start else start
@@ -252,6 +296,7 @@ def build_review(db, bot: dict, day: str | None = None, p: desk.Panel | None = N
         "bought": sum(tr["value"] for tr in trades if tr["side"] == "BUY"),
         "sold": sum(tr["value"] for tr in trades if tr["side"] == "SELL"),
         "day_complete": p.times[last_bar][11:] >= "15:15",  # Yahoo sometimes adds a 15:30 stub bar
+        "twin_pct": _twin_day(db, bot, p, start, base, last_bar),
     }
     for ts in todays:
         t, d = idx[ts], ds[ts]
@@ -276,6 +321,15 @@ def build_review(db, bot: dict, day: str | None = None, p: desk.Panel | None = N
     return pack
 
 
+def _twin_day(db, bot, p, start, base_i, last_bar):
+    tw = twin(db, bot, p)
+    if not tw:
+        return None
+    eq = tw["equity"]
+    i0, i1 = base_i - start, min(last_bar, len(p) - 1) - start
+    return _ret(eq[i0]["value"], eq[i1]["value"]) if 0 <= i0 < len(eq) and 0 <= i1 < len(eq) else None
+
+
 def _f(x, unit="%") -> str:
     return "—" if x is None else f"{x:+.2f}{unit}"
 
@@ -288,8 +342,8 @@ def review_markdown(pack: dict) -> str:
     if not s:
         return "\n".join(L + ["No decisions on this day."])
     L += ["## Day summary", "",
-          f"- Desk {_f(s['desk_pct'])} vs NIFTY 50 {_f(s['nifty_pct'])} (previous close to last bar"
-          f"{'' if s['day_complete'] else ', day not finished'}).",
+          f"- Company {_f(s['desk_pct'])} vs NIFTY 50 {_f(s['nifty_pct'])} vs old-bot twin {_f(s.get('twin_pct'))} "
+          f"(previous close to last bar{'' if s['day_complete'] else ', day not finished'}).",
           f"- {s['decisions']} decisions ({s['by_ai']} by AI). Winners: "
           + ", ".join(f"{a} {n}" for a, n in s["winners"].items()) + ".",
           f"- {s['trades']} trades: bought Rs {s['bought']:,.0f}, sold Rs {s['sold']:,.0f}.", ""]
@@ -354,17 +408,17 @@ def compare_styles(p: desk.Panel, days: int, capital: float = 500_000) -> dict:
     start = max(5 * desk.BARS_PER_DAY, len(p) - days * desk.BARS_PER_DAY)
     s0 = max(0, start - desk.RECORD_BARS - 1)
     p = base_panel(p)
-    sh = desk.shadows(p, capital, start=s0)
-    bt = desk.backtest(p, capital, start)
+    sh = desk.shadows(p, capital, start=s0, agents=desk.OLD_IDS)
+    bt = desk.backtest(p, capital, start, agents=desk.OLD_IDS)
     out = {"days": days, "nifty_pct": bt["market_pct"],
            "one winner": {"pct": bt["return_pct"], "trades": len(bt["sim"]["trades"])}}
     for name in ("team equal", "team by record"):
         targets = {}
         for t in range(start, len(p)):
             if name == "team equal":
-                w = {a: 1 / len(desk.AGENT_IDS) for a in desk.AGENT_IDS}
+                w = {a: 1 / len(desk.OLD_IDS) for a in desk.OLD_IDS}
             else:
-                recs = {a: desk.record(sh["agents"][a]["sim"], s0, t) for a in desk.AGENT_IDS}
+                recs = {a: desk.record(sh["agents"][a]["sim"], s0, t) for a in desk.OLD_IDS}
                 pos = {a: max(0.0, r) for a, r in recs.items() if r is not None}
                 w = {a: v / sum(pos.values()) for a, v in pos.items()} if sum(pos.values()) > 0 else {}
             mix: dict[str, float] = {}

@@ -1270,12 +1270,22 @@ kbd { font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--
 .agent-mark.lg svg { width: 21px; height: 21px; }
 .a-momentum { background: linear-gradient(135deg, #6a4cff, #9b7bff); }
 .a-trend { background: linear-gradient(135deg, #0f8f62, #34c48b); }
+.a-breakout { background: linear-gradient(135deg, #c2410c, #fb923c); }
+.a-contrarian { background: linear-gradient(135deg, #0e7490, #22d3ee); }
+.a-tech { background: linear-gradient(135deg, #4338ca, #818cf8); }
+.a-growth { background: linear-gradient(135deg, #15803d, #4ade80); }
+.a-quality { background: linear-gradient(135deg, #334155, #94a3b8); }
+.a-longterm { background: linear-gradient(135deg, #065f46, #10b981); }
+.a-social { background: linear-gradient(135deg, #be185d, #f472b6); }
+.a-highbeta { background: linear-gradient(135deg, #b91c1c, #f87171); }
 .a-core { background: linear-gradient(135deg, #b4530a, #f0a33a); }
 .a-dip { background: linear-gradient(135deg, #0a6fd6, #4fa7ff); }
 .a-news { background: linear-gradient(135deg, #e0702f, #ffb547); }
 .a-guard { background: linear-gradient(135deg, #3d4250, #7a8193); }
 
 .brain-head { display: flex; flex-direction: column; gap: 10px; }
+.team { display: flex; flex-direction: column; gap: 10px; }
+.team-title { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
 .agent-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .agent-card { padding: 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .agent-top { display: flex; align-items: center; gap: 10px; }

@@ -90,7 +90,9 @@ def register(app: FastAPI, db: Store):
 
     def symbols() -> list[str]:
         """The 10 base stocks, NIFTY, and every stock the core has picked for this bot."""
-        extra = sorted({s for c in core_history().values() for s in c.get("picks", [])} - set(SYMBOLS))
+        bot = running() or next(iter(db.list_desks()), None)
+        risky = db.get_decisions(f"deskrisky:{bot['id']}") if bot else {}
+        extra = sorted({s for h in (core_history(), risky) for c in h.values() for s in c.get("picks", [])} - set(SYMBOLS))
         return SYMBOLS + extra
 
     def panel() -> desk.Panel:
@@ -114,7 +116,19 @@ def register(app: FastAPI, db: Store):
                 except market.MarketError:
                     continue
                 time.sleep(0.3)
-            state["daily_day"] = datetime.now(market.IST).date().isoformat()
+            today = datetime.now(market.IST).date().isoformat()
+            fund = db.get_decisions("deskfund")
+            if not fund or max(fund) < (datetime.now(market.IST) - timedelta(days=7)).date().isoformat():
+                got = {}
+                for s in desk.UNIVERSE:
+                    try:
+                        got[s] = market.fundamentals(s)
+                    except market.MarketError:
+                        continue
+                    time.sleep(0.3)
+                if got:
+                    db.save_decision("deskfund", today, got)
+            state["daily_day"] = today
         finally:
             state["daily_busy"] = False
 
@@ -150,9 +164,10 @@ def register(app: FastAPI, db: Store):
             return
         blocks = []
         for s in desk.UNIVERSE:
-            got = news.headlines(COMPANY[s], s, ["google", "reddit"], limit=6)
-            titles = [i["title"] for i in got["items"]][:6]
-            blocks.append(f"{desk.short(s)} ({COMPANY[s]}): " + (" | ".join(titles) or "no recent items"))
+            heads = [i["title"] for i in news.headlines(COMPANY[s], s, ["google"], limit=5)["items"]][:5]
+            posts = [i["title"] for i in news.headlines(COMPANY[s], s, ["reddit"], limit=5)["items"]][:5]
+            blocks.append(f"{desk.short(s)} ({COMPANY[s]}): News: " + (" | ".join(heads) or "none")
+                          + " || Posts: " + (" | ".join(posts) or "none"))
         raw = prov.complete(desk.MOOD_SYSTEM, [{"role": "user", "content": "<data>\n" + "\n".join(blocks) + "\n</data>"}])
         scores = desk.parse_mood(raw)
         if scores:
@@ -163,10 +178,24 @@ def register(app: FastAPI, db: Store):
     def run_book(bot: dict, p: desk.Panel) -> tuple[dict, int, dict]:
         return coach.run_book(db, bot, p)
 
+    def risky_for(bot: dict, day: str) -> list[str]:
+        hist = db.get_decisions(f"deskrisky:{bot['id']}")
+        if day in hist:
+            return hist[day]["picks"]
+        mk = db.get_market_bars(desk.MARKET, "1d")
+        if not mk or mk[-1].date[:10] < (datetime.strptime(day, "%Y-%m-%d") - timedelta(days=5)).strftime("%Y-%m-%d"):
+            return []
+        picks = leaders.risky({s: r for s in leaders.WIDE if (r := db.get_market_bars(s, "1d"))}, day)
+        db.save_decision(f"deskrisky:{bot['id']}", day, {"picks": picks})
+        return picks
+
     def decide(bot: dict, p: desk.Panel, t: int) -> dict:
-        full, p = p, base(p)
+        full = p
+        if risky_for(bot, p.times[t][:10]) and not all(s in p.bars for s in risky_for(bot, p.times[t][:10])):
+            fetch("1d", 0)  # a new high-beta pick: get its prices first
+            full = p = panel()
         s0 = max(0, t - desk.RECORD_BARS - 3 * desk.BARS_PER_DAY)
-        sh = desk.shadows(p, bot["capital"], coach.mood_index(p, moods(bot)), start=s0)
+        sh = desk.shadows(p, bot["capital"], coach.mood_index(p, moods(bot)), start=s0, ctx=coach.context(db, bot, p))
         props = {a: sh["agents"][a]["proposals"][t] for a in desk.AGENT_IDS}
         recs = {a: desk.record(sh["agents"][a]["sim"], s0, t) for a in desk.AGENT_IDS}
         book, _, ds = run_book(bot, p)
@@ -190,11 +219,13 @@ def register(app: FastAPI, db: Store):
             try:
                 prompt = desk.chief_prompt(p.times[t], props, recs, book["holdings"], book["equity"][-1]["value"],
                                            sh["market"], t, mood, lessons(bot), rules)
-                got = desk.parse_chief(prov.complete(desk.CHIEF_SYSTEM, [{"role": "user", "content": prompt}]), props, ids)
+                got = desk.parse_chief(prov.complete(desk.CHIEF_SYSTEM, [{"role": "user", "content": prompt}]), props, ids,
+                                       allowed=list(full.bars))
                 return {**out, **got, "rules_shown": ids, "by": f"{prov.name}:{prov.model}"}
             except Exception as e:  # noqa: BLE001 - any AI failure falls back to the track record
                 state["last_error"] = f"AI chief: {type(e).__name__}: {str(e)[:160]}"
-        win = desk.judge(sh, s0, t, prev)
+        # no AI: follow the proven original five by record (a 13-analyst record-chase lost 6.9% vs -0.7% in replay)
+        win = desk.judge({"agents": {a: sh["agents"][a] for a in desk.OLD_IDS}}, s0, t, prev if prev in desk.OLD_IDS else None)
         name = next(a["name"] for a in desk.AGENTS if a["id"] == win)
         return {**out, "winner": win, "targets": props[win], "debate": [], "confidence": None, "by": "record",
                 "reason": f"No AI answered, so the desk followed {name}, the agent with the best two-day record."}
@@ -364,6 +395,7 @@ def register(app: FastAPI, db: Store):
                     for h in book["holdings"]]
         names = {a["id"]: a["name"] for a in desk.AGENTS + [desk.CORE]}
         wins = Counter(d["winner"] for d in ds.values())
+        tw = coach.twin(db, bot, p)
         latest = ds[max(ds)] if ds else None
         agents = [{**a, "record_pct": latest["records"].get(a["id"]) if latest else None, "wins": wins.get(a["id"], 0),
                    "proposal": latest["proposals"].get(a["id"], {}) if latest else {}} for a in desk.AGENTS]
@@ -378,7 +410,8 @@ def register(app: FastAPI, db: Store):
         decisions = [{"time": t, "winner": d["winner"], "winner_name": names[d["winner"]], "reason": d.get("reason", ""),
                       "by": d.get("by"), "targets": {desk.short(s): w for s, w in d["targets"].items()},
                       "debate": [{**x, "name": names.get(x["agent"], x["agent"])} for x in d.get("debate", [])],
-                      "confidence": d.get("confidence"), "rules_used": d.get("rules_used", [])}
+                      "confidence": d.get("confidence"), "rules_used": d.get("rules_used", []),
+                      "uses": [names.get(u, u) for u in d.get("uses", [])]}
                      for t, d in sorted(ds.items(), reverse=True)[:40]]
         return {
             "bot": {**bot, "status": "finished" if is_done and bot["status"] == "running" else bot["status"]},
@@ -393,6 +426,8 @@ def register(app: FastAPI, db: Store):
             "ai": bool(ai()), "last_error": state["last_error"], "market_name": desk.MARKET_NAME,
             "universe": [desk.short(s) for s in desk.UNIVERSE],
             "coach": coach_view(bot, p, book, start, ds),
+            "twin": {"value": tw["value"], "return_pct": tw["return_pct"], "edge": round(last["value"] - tw["value"])}
+            if tw else None,
             "core": {"on": bool(core.get("on")), "picks": [desk.short(x) for x in core.get("picks", [])],
                      "gap_pct": core.get("gap_pct"), "refreshed": core.get("refreshed"), "pool": len(leaders.WIDE)},
             "guard": [{"time": e["time"], "kind": e["kind"], "reason": e["reason"]}
@@ -490,7 +525,7 @@ def register(app: FastAPI, db: Store):
         fetch("60d", BACKTEST_TTL)
         p = base(panel())
         start = max(5 * desk.BARS_PER_DAY, len(p) - days * desk.BARS_PER_DAY)
-        bt = desk.backtest(p, capital, start)
+        bt = desk.backtest(p, capital, start, agents=desk.OLD_IDS)  # what the bot does when no AI answers
         m0 = p.market[start].close
         eq = bt["sim"]["equity"]
         series = [{"time": e["time"], "value": e["value"], "market": round(capital * p.market[start + i].close / m0, 2)}

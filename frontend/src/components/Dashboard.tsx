@@ -109,6 +109,7 @@ function Running({ view, setView, onNew }: { view: DeskView; setView: (v: DeskVi
           <p className="kicker">Against NIFTY 50</p>
           <p className="edge-big num">{signed(edge)}</p>
           <p className="sub">{edge >= 0 ? 'ahead of' : 'behind'} the same money in NIFTY 50 ({pct(view.market_pct ?? 0)})</p>
+          {view.twin && <p className="sub">Old bot (silent twin): {pct(view.twin.return_pct)}, the company is {Math.abs(view.twin.edge) < 1 ? 'level with it' : `${view.twin.edge > 0 ? 'ahead by' : 'behind by'} ${signed(Math.abs(view.twin.edge)).replace(/^[+−]/, '')}`}</p>}
         </div>
         <div className="status-card glass">
           <p className={`bot-state ${running ? 'on' : ''}`}><i aria-hidden="true" />{running ? (nse.open ? 'Trading' : 'Waiting for market') : bot.status === 'finished' ? 'Finished' : 'Stopped'}</p>

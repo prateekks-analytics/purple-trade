@@ -58,12 +58,15 @@ export function BotBrain() {
     <div className="page wide brain">
       <header className="brain-head">
         <p className="kicker">How the bot thinks</p>
-        <h1 className="launch-title">Five agents argue. <span className="grad">The best case trades.</span></h1>
-        <p className="launch-sub">Every 30 minutes each agent proposes a portfolio from the 10 stocks. The AI chief weighs their cases, the news and their recent results, picks a winner, and the bot trades it at the next bar.</p>
+        <h1 className="launch-title">A company of analysts. <span className="grad">One manager decides.</span></h1>
+        <p className="launch-sub">Every 30 minutes thirteen analysts, from price action to fundamentals, news, social chatter and risk-takers, each propose a portfolio. The AI manager hears them all and builds one portfolio, often combining several ideas. In a market uptrend the momentum core takes over.</p>
       </header>
 
-      <section className="agent-grid" aria-label="Agents">
-        {(view?.agents ?? []).map(a => {
+      {[...new Set((view?.agents ?? []).map(a => a.team ?? 'Analysts'))].map(team => (
+      <section key={team} className="team" aria-label={team}>
+        <h2 className="team-title">{team}</h2>
+        <div className="agent-grid">
+        {(view?.agents ?? []).filter(a => (a.team ?? 'Analysts') === team).map(a => {
           const pick = Object.keys(a.proposal ?? {})
           return (
             <article key={a.id} className="agent-card glass">
@@ -71,13 +74,15 @@ export function BotBrain() {
               <p className="sub">{a.style}</p>
               <div className="agent-stats">
                 <span><small>Last 2 days</small><b className={`num ${(a.record_pct ?? 0) >= 0 ? 'pos' : 'neg'}`}>{a.record_pct == null ? '—' : pct(a.record_pct)}</b></span>
-                <span><small>Debates won</small><b className="num">{a.wins ?? 0}</b></span>
+                <span><small>Led decisions</small><b className="num">{a.wins ?? 0}</b></span>
               </div>
               <p className="agent-pick">{view?.bot ? (pick.length ? <>Wants <b>{pick.join(', ')}</b></> : 'Wants cash') : ''}</p>
             </article>
           )
         })}
+        </div>
       </section>
+      ))}
 
       <div className="dash-grid">
         <section className="panel" aria-labelledby="deb-h">
@@ -98,7 +103,7 @@ export function BotBrain() {
                           {d.debate.map(c => <li key={c.agent} className={c.agent === d.winner ? 'won' : ''}><AgentMark id={c.agent} size="sm" /><span><b>{c.name}:</b> {c.case}</span></li>)}
                         </ul>
                       )}
-                      <p className="field-note">{d.by === 'record' ? 'Decided by track record (no AI answered).' : `Judged by ${d.by}.`}{d.rules_used?.length ? ` Followed coach ${d.rules_used.length > 1 ? 'rules' : 'rule'} ${d.rules_used.join(', ')}.` : ''}</p>
+                      <p className="field-note">{d.by === 'record' ? 'Decided by track record (no AI answered).' : `Judged by ${d.by}.`}{d.uses && d.uses.length > 1 ? ` Used ideas from ${d.uses.join(', ')}.` : ''}{d.rules_used?.length ? ` Followed coach ${d.rules_used.length > 1 ? 'rules' : 'rule'} ${d.rules_used.join(', ')}.` : ''}</p>
                     </div>
                   )}
                 </li>

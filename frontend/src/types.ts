@@ -299,7 +299,7 @@ export interface Race {
 }
 
 // ----- the portfolio bot (desk) -----
-export interface DeskAgent { id: string; name: string; style: string; record_pct?: number | null; wins?: number; proposal?: Record<string, number> }
+export interface DeskAgent { id: string; name: string; style: string; team?: string; record_pct?: number | null; wins?: number; proposal?: Record<string, number> }
 export interface DeskTrade { time: string; symbol: string; side: 'BUY' | 'SELL'; qty: number; price: number; value: number; why: string }
 export interface DeskHolding { symbol: string; qty: number; price: number; value: number; avg: number | null }
 export interface DeskDecision {
@@ -312,6 +312,7 @@ export interface DeskDecision {
   debate: { agent: string; name: string; case: string }[]
   confidence: number | null
   rules_used?: string[]
+  uses?: string[]
 }
 export interface CoachStat { n: number; days: number; edge_pct: number | null }
 export interface CoachRule {
@@ -348,6 +349,7 @@ export interface DeskView {
   market_name?: string
   coach?: DeskCoach
   guard?: { time: string; kind: 'market' | 'stock'; reason: string }[]
+  twin?: { value: number; return_pct: number; edge: number } | null
   core?: { on: boolean; picks: string[]; gap_pct: number | null; refreshed: string | null; pool: number }
 }
 export interface DeskBacktest {
