@@ -92,6 +92,9 @@ class Store:
         if "interval" not in cols:  # added 15 Oct 2026: '1d' daily, or an intraday bar size such as '5m'
             self._db.execute("ALTER TABLE paper_accounts ADD COLUMN interval TEXT NOT NULL DEFAULT '1d'")
             self._db.commit()
+        if "race_days" not in cols:  # added 22 Oct 2026: > 0 marks a beat-the-market race of that many sessions
+            self._db.execute("ALTER TABLE paper_accounts ADD COLUMN race_days INTEGER NOT NULL DEFAULT 0")
+            self._db.commit()
 
     def _q(self, sql: str, args=()):
         # Rows are read while the lock is held: the connection is shared across request threads, and a
@@ -255,6 +258,9 @@ class Store:
 
     def list_paper(self) -> list[dict]:
         return [self._paper(r) for r in self._q("SELECT * FROM paper_accounts ORDER BY created_at DESC").fetchall()]
+
+    def set_race(self, pid: str, days: int):
+        self._q("UPDATE paper_accounts SET race_days=? WHERE id=?", (days, pid))
 
     def advance_paper(self, pid: str):
         self._q("UPDATE paper_accounts SET sim_days = sim_days + 1 WHERE id=?", (pid,))

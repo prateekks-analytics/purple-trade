@@ -7,10 +7,12 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from . import live_agents, market, superagent as sa
+import time
+
+from . import ai as ai_mod, challenge, live_agents, market, superagent as sa
 from .ai.providers import KEY_ENV, OllamaProvider, ProviderError, make_provider
 from .describe import describe, validate
-from .engine import bars_hash, run_backtest
+from .engine import bars_hash, run_backtest, strategy_hash
 from .schema import Strategy
 from .store import Store
 
@@ -54,6 +56,26 @@ class PaperIn(BaseModel):
     capital: float = Field(100_000, gt=0, le=1e10)
     analyses: list[str] = ["market"]
     interval: str = "1d"  # "1d" daily, or an intraday bar size such as "5m" (live accounts only)
+
+
+class ChallengeIn(BaseModel):
+    """A rule bot (catalog id or version:<vid>) or an unsaved strategy, on one NSE stock."""
+    agent_id: str | None = None
+    strategy: dict | None = None
+    symbol: str = Field(..., min_length=1, max_length=30)
+    weeks: int = Field(challenge.WEEKS, ge=4, le=40)
+    hint: str = Field("", max_length=400)  # coach only: what the person wants changed
+
+
+class KeepIn(BaseModel):
+    strategy: dict
+    name: str = Field("", max_length=120)
+
+
+class RaceIn(BaseModel):
+    agent_id: str
+    symbol: str = Field(..., min_length=1, max_length=30)
+    capital: float = Field(100_000, gt=0, le=1e10)
 
 
 def register(app: FastAPI, db: Store):
@@ -555,6 +577,183 @@ def register(app: FastAPI, db: Store):
         paper_or_404(pid)
         db.delete_paper(pid)
         return {"ok": True}
+
+    # ----- beat the market: weekly replay, AI coach, 7-session live race -----
+    _fetched: dict[str, float] = {}
+
+    def fresh_bars(symbol: str, max_age: float = 600):
+        """Completed daily bars, downloaded again at most every `max_age` seconds per symbol."""
+        tk = market.ticker(symbol)
+        latest = db.latest_dataset_for(tk)
+        if latest is None or time.time() - _fetched.get(tk, 0) > max_age:
+            latest = store_prices(tk)
+            _fetched[tk] = time.time()
+        return db.get_bars(latest["id"]) or []
+
+    def challenge_bot(body: ChallengeIn) -> Strategy:
+        if body.strategy:
+            try:
+                return Strategy.model_validate({**body.strategy, "questions": []})
+            except ValueError as e:
+                raise HTTPException(422, f"Those rules aren't valid: {str(e)[:200]}") from e
+        a = agent(body.agent_id or "")
+        if a["kind"] != "rules":
+            raise HTTPException(422, "Week-by-week replay works with rule bots. AI agents cost an AI call per day.")
+        return a["strategy"]
+
+    def replay_card(st: Strategy, symbol: str, weeks: int, stock=None, nifty=None) -> dict:
+        stock = stock if stock is not None else fresh_bars(symbol)
+        rules_ready(st, len(stock))
+        try:
+            card = challenge.weekly(st, stock, nifty if nifty is not None else fresh_bars(challenge.MARKET), weeks)
+        except ValueError as e:
+            raise HTTPException(409, str(e)) from e
+        learn, unseen = challenge.split(card)
+        return {**card, "learn": learn, "unseen": unseen, "describe": describe(st), "strategy": st.model_dump(),
+                "symbol": market.ticker(symbol), "market": challenge.MARKET_NAME, "week_sessions": challenge.WEEK}
+
+    @app.post("/api/challenge/replay")
+    def challenge_replay(body: ChallengeIn):
+        return replay_card(challenge_bot(body), body.symbol, body.weeks)
+
+    @app.post("/api/challenge/coach")
+    def challenge_coach(body: ChallengeIn, request: Request):
+        """The AI coach proposes a change, code replays it, and the coach sees the result before its next try.
+        It learns only from the older weeks; the newest weeks show whether a change also works on unseen weeks."""
+        provider = ai_or_503(ai_for(request))
+        base = challenge_bot(body)
+        stock, nifty = fresh_bars(body.symbol), fresh_bars(challenge.MARKET)
+        before = replay_card(base, body.symbol, body.weeks, stock, nifty)
+        cut = before["learn"]["weeks"]
+
+        def work(log, progress):
+            best, best_card, tried = base, before, []
+            for r in range(challenge.COACH_ROUNDS):
+                log("step", f"Try {r + 1} of {challenge.COACH_ROUNDS}: the AI coach studies the losing weeks")
+                msg = challenge.coach_message(best, best_card["learn"], best_card["weeks"][:cut], tried, body.hint)
+                try:
+                    res = ai_mod.propose(msg, best, [], provider, check_wording=False)
+                except ai_mod.ProviderError as e:
+                    log("error", f"The AI didn't answer: {e}")
+                    progress()
+                    continue
+                if not res["ok"] or not res["strategy"]:
+                    log("error", res.get("error") or "The AI asked a question instead of changing the rules.")
+                    progress()
+                    continue
+                cand = Strategy.model_validate({**res["strategy"], "questions": []})
+                v = validate(cand)
+                hard = [e for e in v["errors"] if "open question" not in e]
+                if hard or len(stock) <= v["warmup_bars"] + challenge.WEEK + 1:
+                    log("error", "Its rules needed more history than we have; skipped.")
+                    progress()
+                    continue
+                card = replay_card(cand, body.symbol, body.weeks, stock, nifty)
+                change = (res["notes"] or f"BUY when {card['describe']['entry']}").strip()[:300]
+                tried.append({"change": change, "beat": card["learn"]["beat"], "weeks": card["learn"]["weeks"],
+                              "unseen_beat": card["unseen"]["beat"], "unseen_weeks": card["unseen"]["weeks"]})
+                better = challenge.score(card["learn"]) > challenge.score(best_card["learn"])
+                log("result", f"{change} → beat the market in {card['learn']['beat']} of {card['learn']['weeks']} weeks"
+                              + (" (best so far)" if better else " (not better)"))
+                if better:
+                    best, best_card = cand, card
+                progress()
+            return {"before": before, "after": best_card if best is not base else None, "tries": tried}
+
+        return {"kind": "job", "job": jobs.start(work, challenge.COACH_ROUNDS)}
+
+    @app.post("/api/challenge/keep")
+    def challenge_keep(body: KeepIn):
+        """Save an improved bot as a new strategy with one approved version, so it can race."""
+        try:
+            st = Strategy.model_validate({**body.strategy, "questions": []})
+        except ValueError as e:
+            raise HTTPException(422, f"Those rules aren't valid: {str(e)[:200]}") from e
+        if body.name.strip():
+            st = st.model_copy(update={"name": body.name.strip()})
+        hard = [e for e in validate(st)["errors"] if "open question" not in e]
+        if hard:
+            raise HTTPException(409, {"errors": hard})
+        s = db.create_strategy(st.name)
+        db.save_draft(s["id"], st.model_dump(), name=st.name)
+        v = db.add_version(s["id"], st.model_dump(), strategy_hash(st))
+        return {"agent_id": f"version:{v['id']}", "strategy_id": s["id"], "title": f"{st.name} (version {v['number']})"}
+
+    def race_view(p: dict, live: bool = False) -> dict:
+        days = p.get("race_days") or challenge.WEEK
+        v = paper_view(p)
+        cap = p["capital"]
+        eq = v["result"]["equity"][:days + 1]
+        meta = db.latest_dataset_for(challenge.MARKET)
+        closes = {b.date: b.close for b in (db.get_bars(meta["id"]) or [])} if meta else {}
+        mdates = sorted(closes)
+        m0 = challenge.close_on(closes, mdates, p["start_date"])
+
+        def mkt(day: str):
+            m = challenge.close_on(closes, mdates, day)
+            return round(cap * m / m0, 2) if m and m0 else None
+
+        series = [{"date": e["date"], "bot": e["equity"], "market": mkt(e["date"])} for e in eq]
+        last, done = series[-1], len(series) - 1
+        finished = done >= days
+        trades = v["result"]["trades"]
+        open_t = None if finished else next((t for t in trades if t["open"]), None)
+        bot_now, mkt_now, live_at = last["bot"], last["market"], None
+        if live and not finished and m0:
+            try:
+                qm = market.quote(challenge.MARKET)
+                if qm["session_open"]:
+                    px = market.quote(p["symbol"])["price"] if open_t else 0
+                    cash = last["bot"] - (open_t["qty"] * eq[-1]["close"] if open_t else 0)
+                    bot_now = round(cash + (open_t["qty"] * px if open_t else 0), 2)
+                    mkt_now, live_at = round(cap * qm["price"] / m0, 2), qm["time"]
+            except market.MarketError:
+                pass
+        edge = round(bot_now - mkt_now) if mkt_now is not None else None
+        if done == 0:
+            headline = "The race starts at the next open. Your bot and the market begin with the same money."
+        elif edge is None:
+            headline = "Waiting for NIFTY 50 prices."
+        else:
+            lead = "ahead of" if edge > 0 else "behind" if edge < 0 else "level with"
+            amount = f"₹{abs(edge):,} " if edge else ""
+            headline = f"{'Finished' if finished else f'Day {done} of {days}'}: your bot is {amount}{lead} the market."
+        return {"id": p["id"], "name": p["name"], "agent": v["agent"], "symbol": p["symbol"], "start": p["start_date"],
+                "days": days, "day": min(done, days), "finished": finished, "capital": cap,
+                "bot_value": bot_now, "market_value": mkt_now, "edge": edge, "headline": headline,
+                "series": series, "live_at": live_at, "today": v["today"],
+                "holding": {"qty": open_t["qty"], "since": open_t["entry_date"], "price": open_t["entry_price"]} if open_t else None,
+                "trades": [t for t in trades if not t["open"] and t["exit_date"] <= last["date"]]}
+
+    def race_or_404(pid: str) -> dict:
+        p = paper_or_404(pid)
+        if not p.get("race_days"):
+            raise HTTPException(404, "Race not found")
+        return p
+
+    @app.post("/api/challenge/races")
+    def race_start(body: RaceIn):
+        if agent(body.agent_id)["kind"] != "rules":
+            raise HTTPException(422, "Races are for rule bots for now.")
+        fresh_bars(challenge.MARKET, 0)
+        pid = create_paper(PaperIn(agent_id=body.agent_id, symbol=body.symbol, capital=body.capital))["account"]["id"]
+        db.set_race(pid, challenge.WEEK)
+        return race_view(db.get_paper(pid))
+
+    @app.get("/api/challenge/races")
+    def race_list():
+        return [race_view(p) for p in db.list_paper() if p.get("race_days")]
+
+    @app.get("/api/challenge/races/{pid}")
+    def race_get(pid: str, live: bool = False):
+        p = race_or_404(pid)
+        if live_symbol(p):
+            try:
+                fresh_bars(p["symbol"])
+                fresh_bars(challenge.MARKET)
+            except HTTPException:
+                pass  # keep showing the stored prices when Yahoo is unreachable
+        return race_view(p, live)
 
     # ----- code export -----
     @app.get("/api/superagent/export")
