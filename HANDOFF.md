@@ -7,6 +7,15 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026; Beat the market added 22 Oct)
 
+**Daily review tab (22 Oct 2026, evening; commit 2893688, NOT pushed yet)**
+- New HF token `purple-coach-cloud` (fine-grained, read+write on the state dataset only) in the cloud env; test run
+  of the routine passed (whoami Prat8118, dataset downloaded, skipped because the laptop had reviewed 22 Oct).
+- Nav item Daily review `#/review` (`components/Review.tsx`): one card per journal entry, newest first: Summary (else
+  the Result line), went well / went wrong / rule changes / watch next, rest under More detail.
+  `GET /api/desk/journal` (`coach.parse_journal`); online, `hfsync.pull_journal` copies `coach/journal.md` from the
+  dataset at startup and every 10 min (pull only). COACH.md now asks for a plain `- Summary:` bullet first; the cloud
+  routine reads COACH.md from GitHub, so this needs the push. 22 Oct's entry has no Summary.
+
 **Daily coach in the cloud (22 Oct 2026, ~17:00 IST)**
 - Cloud routine trig_01SBtXHPFWDFrRSvKeRKSLL8 "Purple Desk daily coach (16:30 IST)": cron `0 11 * * 1-5` UTC, Sonnet 5.5,
   Default cloud env, repo prateekks-analytics/purple-trade, no connectors. Needs `HF_TOKEN` in the environment (user
