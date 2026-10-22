@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
-from . import agents, ai, desk_routes, superagent_routes
+from . import agents, ai, coach, desk_routes, hfsync, superagent_routes
 from .ai import providers as ai_providers
 from .envfile import load_env
 from .csvdata import CsvError, parse_csv
@@ -20,7 +20,7 @@ from .describe import describe, validate
 from .engine import bars_hash, run_backtest, strategy_hash
 from .sample import TEMPLATES, synthetic_bars
 from .schema import Strategy
-from .store import Store, default_store
+from .store import Store, default_db_path, default_store
 
 
 class NewStrategy(BaseModel):
@@ -43,6 +43,9 @@ class BacktestIn(BaseModel):
 def create_app(store: Store | None = None, provider=None) -> FastAPI:
     if provider is None:  # real run (tests pass their own provider): read purple/.env first
         load_env()
+    sync = hfsync.from_env(default_db_path(), coach.coach_dir()) if store is None else None
+    if sync:  # hosted on a Hugging Face Space: bring back the saved database and playbook first
+        sync.restore()
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         """Live loop: every 60 s, move live paper accounts forward (tests drive app.state.live_tick directly)."""
@@ -52,9 +55,13 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
                 while not stop.wait(60):
                     app.state.live_tick()
                     app.state.desk_tick()
+                    if sync:
+                        sync.tick()
             threading.Thread(target=run, name="purple-live", daemon=True).start()
         yield
         stop.set()
+        if sync:
+            sync.tick(force=True)  # last backup before the Space restarts
 
     app = FastAPI(title="Purple Trade", version="0.1.0", lifespan=lifespan)
     db = store or default_store()
@@ -96,7 +103,9 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
     # ----- meta -----
     @app.get("/api/health")
     def health(request: Request):
-        return {"ok": True, "ai": provider_for(request).status(), "hosted": bool(os.environ.get("PURPLE_HOSTED"))}
+        return {"ok": True, "ai": provider_for(request).status(), "hosted": bool(os.environ.get("PURPLE_HOSTED")),
+                "state_backup": None if not sync else {"repo": sync.hub.repo, "error": sync.error,
+                                                       "last": sync.last or None}}
 
     @app.get("/api/ai/providers")
     def ai_provider_list():

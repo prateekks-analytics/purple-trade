@@ -7,6 +7,22 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026; Beat the market added 22 Oct)
 
+**Hosting on a private Hugging Face Space (22 Oct 2026, morning after; user chose HF, will check daily)**
+- 22 Oct 09:40 IST the user's server on 8780 was down (laptop closed); restarted it (preview `purple-api`), the bot
+  decided 09:15 by Gemini. Local DB bot f87d385cea46 (open-ended, started 21 Oct 15:30).
+- Built for the Space, NOT uploaded yet: `space/Dockerfile` + `space/README.md` (Space front matter, sdk docker,
+  port 7860, TZ IST, runs as uid 1000, state in /data/purple), `tools/space_stage.py <out>` copies only code (71
+  files, no DB/.env/node_modules). `purple_api/hfsync.py`: on a Space (SPACE_ID set) with HF_TOKEN, restores the DB
+  and playbook from private dataset `<SPACE_AUTHOR_NAME>/purple-desk-state` (or PURPLE_STATE_REPO) before the store
+  opens, backs the DB up (sqlite online backup) when changed every 10 min and on shutdown, syncs the playbook
+  3-way (hub wins on conflict). If the restore fails (offline), backups stay off for that run so an empty DB never
+  overwrites the saved one. `/api/health` shows `state_backup`. Off on the laptop even with a token.
+- `/coach-bot` hosted mode: when `purple/coach/hub.txt` names the dataset, it downloads DB + playbook with the CIS
+  `.venv` `hf` CLI (huggingface_hub 1.32, already installed there), reviews, then uploads only playbook.md.
+- User steps still needed: HF account + write token, `hf auth login` on the laptop, create the private Docker
+  Space, add secrets GOOGLE_API_KEY and HF_TOKEN; decide whether to carry the local DB (the running bot) over.
+  Free Spaces sleep after ~48 h without visits; Yahoo from HF servers is UNVERIFIED (may rate-limit).
+
 **Claude coaches the bot (22 Oct 2026, evening; not pushed)**
 - Goal: after each trading day Claude Code reviews the desk's decisions and writes a short playbook; the Gemini chief
   reads it in every decision. Claude never runs in the live loop; no paid calls. Not scheduled yet (user can ask).

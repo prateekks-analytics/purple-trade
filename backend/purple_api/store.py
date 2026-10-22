@@ -311,6 +311,9 @@ class Store:
         return self.get_dataset_meta(r["id"]) if r else None
 
 
+def default_db_path() -> str:
+    return os.environ.get("PURPLE_DB", str(Path(__file__).resolve().parents[1] / "data" / "purple.sqlite3"))
+
+
 def default_store() -> Store:
-    path = os.environ.get("PURPLE_DB", str(Path(__file__).resolve().parents[1] / "data" / "purple.sqlite3"))
-    return Store(path)
+    return Store(default_db_path())
