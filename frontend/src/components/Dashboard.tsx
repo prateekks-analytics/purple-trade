@@ -5,7 +5,7 @@ import { fmtMoney } from '../lib/tree'
 import { useQuotes } from '../lib/quotes'
 import { nseStatus } from '../lib/portfolio'
 import { errText } from './AgentBits'
-import { AgentMark, PortfolioChart, clock, dayLabel, pct, signed, useBacktest, useDesk, when } from './DeskBits'
+import { AgentMark, PortfolioChart, clock, dayLabel, decidedAt, pct, signed, useBacktest, useDesk, when } from './DeskBits'
 
 const AMOUNTS = [100000, 500000, 1000000]
 const SPANS = [{ days: 7, label: '7 days' }, { days: 30, label: '30 days' }, { days: 0, label: 'Until I stop' }]
@@ -137,7 +137,7 @@ function Running({ view, setView, onNew }: { view: DeskView; setView: (v: DeskVi
         <section className="panel decision-card" aria-labelledby="dec-h">
           <div className="panel-head">
             <h2 id="dec-h" className="panel-title">Latest decision</h2>
-            {latest && <span className="sub">{when(latest.time)}</span>}
+            {latest && <span className="sub">{decidedAt(latest.time)}</span>}
           </div>
           {latest ? (
             <div className="decision-body">

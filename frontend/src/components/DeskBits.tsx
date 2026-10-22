@@ -50,6 +50,12 @@ export const pct = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(
 export const clock = (t: string) => t.slice(11, 16)
 export const dayLabel = (t: string) => new Date(`${t.slice(0, 10)}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 export const when = (t: string) => `${dayLabel(t)}, ${clock(t)}`
+/** Decisions are stored under the 30-minute bar they read; they are made when that bar closes, 30 minutes later. */
+export const decidedAt = (t: string) => {
+  const [h, m] = t.slice(11, 16).split(':').map(Number)
+  const mins = h * 60 + m + 30
+  return `${dayLabel(t)}, ${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`
+}
 
 /** Portfolio against NIFTY 50 on the same money, with a marker for every bar in which the bot traded. */
 export function PortfolioChart({ series, trades = [], height = 300, label = 'Your bot' }: {

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { api } from '../api'
 import type { CoachRule } from '../types'
 import { errText } from './AgentBits'
-import { AgentMark, PortfolioChart, dayLabel, pct, signed, useBacktest, useDesk, when } from './DeskBits'
+import { AgentMark, PortfolioChart, dayLabel, decidedAt, pct, signed, useBacktest, useDesk, when } from './DeskBits'
 
 /** Rules Claude wrote after reviewing past days; the chief reads them before every decision. */
 function CoachNotes({ rules, onChange }: { rules: CoachRule[]; onChange: () => void }) {
@@ -87,7 +87,7 @@ export function BotBrain() {
               {decisions.slice(0, 12).map((d, i) => (
                 <li key={d.time} className={open === i ? 'open' : ''}>
                   <button className="debate-row" onClick={() => setOpen(open === i ? -1 : i)} aria-expanded={open === i}>
-                    <AgentMark id={d.winner} size="sm" /><b>{d.winner_name}</b><span className="sub">{when(d.time)}</span>
+                    <AgentMark id={d.winner} size="sm" /><b>{d.winner_name}</b><span className="sub">{decidedAt(d.time)}</span>
                     <span className="debate-tg">{Object.keys(d.targets).join(', ') || 'cash'}</span>
                   </button>
                   {open === i && (
@@ -109,7 +109,7 @@ export function BotBrain() {
 
         <div className="stack">
           <section className="panel" aria-labelledby="mood-h">
-            <div className="panel-head"><h2 id="mood-h" className="panel-title">News & social mood</h2>{mood && <span className="sub">{when(mood.time)}</span>}</div>
+            <div className="panel-head"><h2 id="mood-h" className="panel-title">News & social mood</h2>{mood && <span className="sub">{decidedAt(mood.time)}</span>}</div>
             {mood ? (
               <ul className="mood-list">
                 {Object.entries(mood.scores).sort((a, b) => b[1].score - a[1].score).map(([s, m]) => (
