@@ -257,3 +257,26 @@ def test_review_endpoint_and_cli(client, coach_dir, monkeypatch, tmp_path):
     assert coach.main(["review"]) == 0 and len(list((coach_dir / "reviews").glob("*.md"))) == 2
     write_playbook(coach_dir)
     assert coach.main(["check"]) == 0
+
+
+def test_free_ai_chain_groq_first_then_gemini(monkeypatch):
+    from purple_api.ai import providers as pv
+    monkeypatch.delenv("PURPLE_AI_PROVIDER", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "g")
+    monkeypatch.setenv("GOOGLE_API_KEY", "k")
+    chain = pv.default_provider()
+    assert isinstance(chain, pv.ChainProvider) and (chain.name, chain.model) == ("groq", "openai/gpt-oss-120b")
+    assert [p.name for p in chain.providers] == ["groq", "gemini"] and chain.status()["available"]
+
+    class Down:
+        name, model = "groq", "openai/gpt-oss-120b"
+        def complete(self, s, m): raise pv.ProviderError("rate limit")
+    class Up:
+        name, model = "gemini", "gemini-3.5-flash"
+        def complete(self, s, m): return '{"winner":"guard"}'
+    c = pv.ChainProvider([Down(), Up()])
+    assert c.complete("s", []) == '{"winner":"guard"}' and (c.name, c.model) == ("gemini", "gemini-3.5-flash")
+    with pytest.raises(pv.ProviderError, match="groq: rate limit"):
+        pv.ChainProvider([Down()]).complete("s", [])
+    monkeypatch.delenv("GROQ_API_KEY")
+    assert isinstance(pv.default_provider(), pv.GeminiProvider)  # unchanged without a Groq key

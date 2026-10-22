@@ -273,9 +273,48 @@ def list_models(provider: str, key: str = "") -> list[str]:
     return p.list_models()
 
 
+class ChainProvider:
+    """Try each free provider in order (e.g. Groq, then Gemini). name/model show the one that answered last, so a
+    decision records which AI made it."""
+
+    def __init__(self, providers: list):
+        self.providers = providers
+        self.name, self.model = providers[0].name, providers[0].model
+
+    def status(self) -> dict:
+        ok = [p for p in self.providers if p.status()["available"]]
+        return {"provider": self.name, "model": self.model, "available": bool(ok),
+                "detail": "Free AI, in order: " + ", then ".join(f"{p.name} {p.model}" for p in self.providers)}
+
+    def complete(self, system: str, messages: list[dict]) -> str:
+        errors = []
+        for p in self.providers:
+            try:
+                out = p.complete(system, messages)
+                self.name, self.model = p.name, p.model
+                return out
+            except ProviderError as e:
+                errors.append(f"{p.name}: {e}")
+        raise ProviderError(" | ".join(errors)[:400])
+
+
+GROQ_MODEL = "openai/gpt-oss-120b"
+
+
 def default_provider() -> Provider:
-    """PURPLE_AI_PROVIDER=gemini|ollama picks one; otherwise Gemini when GOOGLE_API_KEY is set, else local Ollama."""
+    """PURPLE_AI_PROVIDER=gemini|ollama picks one. Otherwise Groq (GROQ_API_KEY, free tier) first with Gemini
+    (GOOGLE_API_KEY) as backup, whichever keys are set; with neither, local Ollama."""
     choice = os.environ.get("PURPLE_AI_PROVIDER", "").strip().lower()
-    if choice == "ollama" or (choice != "gemini" and not os.environ.get("GOOGLE_API_KEY")):
+    if choice == "ollama":
         return OllamaProvider()
-    return GeminiProvider()
+    if choice == "gemini":
+        return GeminiProvider()
+    chain = []
+    if os.environ.get("GROQ_API_KEY"):
+        chain.append(OpenAICompatProvider("groq", _BASES["groq"], os.environ["GROQ_API_KEY"],
+                                          os.environ.get("PURPLE_GROQ_MODEL", GROQ_MODEL), timeout=60))
+    if os.environ.get("GOOGLE_API_KEY"):
+        chain.append(GeminiProvider())
+    if not chain:
+        return OllamaProvider()
+    return chain[0] if len(chain) == 1 else ChainProvider(chain)

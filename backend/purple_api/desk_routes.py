@@ -61,7 +61,7 @@ def register(app: FastAPI, db: Store):
 
     def ai():
         p = app.state.provider
-        return p if getattr(p, "name", "") in ("gemini", "ollama") and p.status()["available"] else None
+        return p if getattr(p, "name", "") in ("gemini", "groq", "ollama") and p.status()["available"] else None
 
     # ----- data -----
     def fetch(range_: str, max_age: float) -> None:

@@ -21,7 +21,7 @@ SYMBOL_KINDS = ("ta-original", *sa.NEWS_KINDS)  # agents that need a real NSE sy
 # bar sizes a paper account can follow, per agent kind (AI agents decide at most every 15 minutes: API limits)
 INTERVALS = {"rules": ("1d", "5m", "15m", "30m"), "ai-agent": ("1d",), "ai-news": ("1d", "15m", "30m"), "ai-crew": ("1d", "30m"),
              "ai-team": ("1d",), "ta-original": ("1d",)}
-FREE_BACKGROUND_AI = ("gemini", "ollama")  # the live loop only calls the server's own free AI, never a browser key
+FREE_BACKGROUND_AI = ("gemini", "groq", "ollama")  # the live loop only calls the server's own free AI, never a browser key
 
 
 class RunIn(BaseModel):
