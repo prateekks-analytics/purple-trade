@@ -7,7 +7,7 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026; Beat the market added 22 Oct)
 
-**Coach report, real costs, steady hands (22 Oct 2026, ~18:00 IST; NOT pushed yet)**
+**Coach report, real costs, steady hands (22 Oct 2026, ~18:00 IST; commit ad92413, pushed 18:06 as bdc0c7d, live)**
 - User: the review is the most important part; plain English, judge every bot, whole-system ideas for maximum
   return, show real taxes/charges SEPARATELY (never cut returns), the bot must learn from the review; coach on Opus.
 - `purple_api/costs.py`: real Indian bill per day for the bot's trades (delivery STT 0.1% both sides, intraday STT
@@ -30,7 +30,7 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 - COACH.md rewritten (plain-English rules, grades, costs, ideas, report step, reports.json "already reviewed"
   check). Routine trig_01SBtXHPFWDFrRSvKeRKSLL8 now model claude-opus-5-5 with a new prompt; the API dropped the
   `effort` field, so extra-high effort is NOT set (check the routine page). A sample 22 Oct report (written by this
-  session) is in the session scratchpad only, not uploaded.
+  session) was uploaded to the dataset (`coach/reports.json`, user approved) and shows live in Daily review.
 
 **Daily review tab (22 Oct 2026, evening; commit 2893688, pushed 17:36 as 4eecbfd)**
 - New HF token `purple-coach-cloud` (fine-grained, read+write on the state dataset only) in the cloud env; test run
