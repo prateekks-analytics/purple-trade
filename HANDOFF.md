@@ -15,6 +15,10 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 - Local DB bot f87d385cea46 set to 'stopped' (22 Oct 10:20) so the laptop can never run a second copy; the online
   bot is the truth. Scheduled task `purple-desk-coach` (desktop app, weekdays 16:30 IST, Auto mode) runs /coach-bot
   on the online state; it runs on next app launch if the app was closed. User chose to keep the public demo.
+- AI (22 Oct 10:36): Render env GROQ_API_KEY added; `default_provider` = ChainProvider: Groq `openai/gpt-oss-120b`
+  first (free ~1K req/day per Groq docs, labelled Developer plan), then Gemini (3.8 Flash has only 20 free req/day;
+  3.7 also 20; 3.5 worked). gemini-4-argon has no free-tier quota. Decisions record `by` = the provider that answered.
+  The in-app 'Connect an AI' key is browser-only and never used by the live bot.
 - Keep-awake: the server pings its own RENDER_EXTERNAL_URL every 10 min (only when sync is on). GitHub workflow
   version parked at `deploy/keep-awake.yml` (gh token lacks `workflow` scope).
 - 22 Oct 09:40 IST the laptop server (8780) was down (lid closed); restarted via preview `purple-api`; Gemini decided
