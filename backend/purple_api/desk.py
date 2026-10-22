@@ -518,11 +518,21 @@ def parse_chief(raw: str, props: dict[str, dict[str, float]], rule_ids: list[str
     s = raw.strip()
     s = s[s.find("{"): s.rfind("}") + 1] if "{" in s else s
     j = json.loads(s)
-    win = j.get("winner") if j.get("winner") in props else None
-    if not win:
-        raise ValueError("no valid winner")
+    known = {a["name"].lower(): a["id"] for a in AGENTS + [CORE] if a["id"] in props}
+
+    def agent(x) -> str | None:  # an id, or the analyst's display name
+        x = str(x or "").strip()
+        return x if x in props else known.get(x.lower())
+    uses = [u for u in map(agent, j.get("uses") if isinstance(j.get("uses"), list) else []) if u]
+    win = agent(j.get("winner")) or (uses[0] if uses else None)
     names = {short(u): u for u in (allowed or UNIVERSE)}
     raw_t = j.get("targets")
+    if not win and isinstance(raw_t, dict) and raw_t:  # a mixed portfolio: lead = the analyst it overlaps most
+        picked = {names.get(str(k).upper().removesuffix(".NS")) for k in raw_t}
+        best = max(props, key=lambda a: len(picked & set(props[a])), default=None)
+        win = best if best and picked & set(props[best]) else None
+    if not win:
+        raise ValueError("no valid winner")
     if isinstance(raw_t, dict) and raw_t:
         tg = {}
         for k, v in raw_t.items():
@@ -538,9 +548,8 @@ def parse_chief(raw: str, props: dict[str, dict[str, float]], rule_ids: list[str
             tg = {k: v / total for k, v in tg.items()}
     else:
         tg = dict(props.get(win) or {})
-    debate = [{"agent": d.get("agent"), "case": str(d.get("case", ""))[:240]} for d in (j.get("debate") or [])
-              if isinstance(d, dict) and d.get("agent") in props]
-    uses = [u for u in (j.get("uses") or []) if u in props] if isinstance(j.get("uses"), list) else []
+    debate = [{"agent": agent(d.get("agent")), "case": str(d.get("case", ""))[:240]} for d in (j.get("debate") or [])
+              if isinstance(d, dict) and agent(d.get("agent"))]
     conf = j.get("confidence")
     return {"winner": win, "targets": {k: round(v, 4) for k, v in tg.items()}, "debate": debate,
             "reason": str(j.get("reason", ""))[:400], "confidence": conf if isinstance(conf, (int, float)) else None,

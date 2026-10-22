@@ -445,3 +445,15 @@ def test_without_ai_only_the_original_five_are_followed(client):
     c.post("/api/desk/decide")
     d = c.get("/api/desk").json()["decisions"][0]
     assert d["by"] == "record" and d["winner"] in desk.OLD_IDS
+
+
+def test_manager_answer_with_names_or_a_mix_is_accepted():
+    props = {"growth": {"INFY.NS": 0.24}, "quality": {"TCS.NS": 0.24, "INFY.NS": 0.24}, "guard": {}}
+    a = desk.parse_chief('{"winner":"Quality investor","targets":{"TCS":0.3}}', props)
+    assert a["winner"] == "quality"
+    b = desk.parse_chief('{"winner":"mixed","uses":["Growth investor","quality"],"targets":{"INFY":0.3}}', props)
+    assert b["winner"] == "growth" and b["uses"] == ["growth", "quality"]
+    c = desk.parse_chief('{"winner":"combined","targets":{"TCS":0.2,"INFY":0.2}}', props)
+    assert c["winner"] == "quality"  # overlaps most with the mix
+    with pytest.raises(ValueError):
+        desk.parse_chief('{"winner":"nobody","targets":{}}', props)

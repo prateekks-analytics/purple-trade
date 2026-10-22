@@ -216,19 +216,21 @@ def register(app: FastAPI, db: Store):
         if prov:
             rules = coach.live_rules()
             ids = [r["id"] for r in rules]
+            raw = ""
             try:
                 prompt = desk.chief_prompt(p.times[t], props, recs, book["holdings"], book["equity"][-1]["value"],
                                            sh["market"], t, mood, lessons(bot), rules)
-                got = desk.parse_chief(prov.complete(desk.CHIEF_SYSTEM, [{"role": "user", "content": prompt}]), props, ids,
-                                       allowed=list(full.bars))
+                raw = prov.complete(desk.CHIEF_SYSTEM, [{"role": "user", "content": prompt}])
+                got = desk.parse_chief(raw, props, ids, allowed=list(full.bars))
                 return {**out, **got, "rules_shown": ids, "by": f"{prov.name}:{prov.model}"}
             except Exception as e:  # noqa: BLE001 - any AI failure falls back to the track record
-                state["last_error"] = f"AI chief: {type(e).__name__}: {str(e)[:160]}"
+                state["last_error"] = f"AI chief: {type(e).__name__}: {str(e)[:160]}" + (f" | answer: {raw[:160]}" if raw else "")
         # no AI: follow the proven original five by record (a 13-analyst record-chase lost 6.9% vs -0.7% in replay)
         win = desk.judge({"agents": {a: sh["agents"][a] for a in desk.OLD_IDS}}, s0, t, prev if prev in desk.OLD_IDS else None)
         name = next(a["name"] for a in desk.AGENTS if a["id"] == win)
         return {**out, "winner": win, "targets": props[win], "debate": [], "confidence": None, "by": "record",
-                "reason": f"No AI answered, so the desk followed {name}, the agent with the best two-day record."}
+                "reason": (f"The AI's answer could not be used ({(state['last_error'] or '')[:60]}), so" if prov else "No AI answered, so")
+                          + f" the desk followed {name}, the agent with the best two-day record."}
 
     def step(bot: dict, now: datetime, force: bool = False) -> bool:
         """Decide the newest completed bar if it has no decision yet. Older missed bars are skipped (held)."""
