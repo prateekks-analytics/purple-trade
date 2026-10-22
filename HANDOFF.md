@@ -7,6 +7,23 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026; Beat the market added 22 Oct)
 
+**Research 22 Oct 2026 (late morning): what was tested and rejected (do not redo without new data)**
+- Replays on real Yahoo prices (60 days of 5m + 30m, 2 years daily, 4 years annual fundamentals), judge-by-record,
+  fees and slippage included. Windows: last 40/20/10 trading days to 22 Oct.
+- Decision interval: 30 min beats 5 min in every window (40d: -0.67% vs -2.55% same signals vs -4.59% short signals).
+- Team mix of all agents (equal or by record) loses to one winner (40d -3.58% / -0.96% vs -0.85%), 2-3x the trades.
+- Crash guard (SHIPPED, d3a58b7): NIFTY -0.7% in 30 min -> all cash for the day; stock -5% from high since bought.
+  Per-stock stops of 1.5-4% lost 0.5-1.6 pts over 40 days.
+- Technical analyst agent (MACD 12/26/9 + Bollinger 20/2 + volume + RSI<70): own portfolio -9.1% over 40 days;
+  adding it made the desk worse or equal. REJECTED.
+- Long-term leader agent (above 50d > 200d SMA, 63-day strength vs NIFTY, top 4): +0.3-0.4 pts in the 60-day
+  replay but over 13 months on daily data -1.28%/month vs NIFTY -0.33% (beat NIFTY 4/13). REJECTED as noise.
+- Quality filter (avoid bottom 3 by profit growth + revenue growth + ROE, reports public +75 days): +2-4 pts in the
+  60-day replay (avoided AXISBANK, HDFCBANK, ITC) but over 2 years the "weakest" beat the rest in 13 of 21 periods
+  (avg -1.1 pts). REJECTED as luck. Valuation skipped (INFY reports in USD); results-date avoidance untestable
+  (no free history of results dates); richer AI fact sheet untestable without many AI calls.
+- Experiment code was reverted (not in git); scripts were in the session scratchpad only.
+
 **Purple Desk online: Render + Hugging Face dataset backup (22 Oct 2026, morning after)**
 - LIVE since 22 Oct ~10:12 IST: https://purple-desk-qgjw.onrender.com (Render service srv-dbcp75lg1s2s73e2jk70,
   Blueprint purple-desk, commit 748ff42). Password = PURPLE_PASSWORD (user typed it; any user name). The laptop
