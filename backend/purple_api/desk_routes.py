@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from . import coach, desk, leaders, market, news
+from . import coach, costs, desk, leaders, market, news
 from .store import Store
 
 COMPANY = {"RELIANCE.NS": "Reliance Industries", "HDFCBANK.NS": "HDFC Bank", "ICICIBANK.NS": "ICICI Bank",
@@ -219,7 +219,8 @@ def register(app: FastAPI, db: Store):
             raw = ""
             try:
                 prompt = desk.chief_prompt(p.times[t], props, recs, book["holdings"], book["equity"][-1]["value"],
-                                           sh["market"], t, mood, lessons(bot), rules)
+                                           sh["market"], t, mood, lessons(bot), rules,
+                                           coach.latest_report(bot["id"], p.times[t]), costs.switch_cost_pct())
                 raw = prov.complete(desk.CHIEF_SYSTEM, [{"role": "user", "content": prompt}])
                 got = desk.parse_chief(raw, props, ids, allowed=list(full.bars))
                 return {**out, **got, "rules_shown": ids, "by": f"{prov.name}:{prov.model}"}
@@ -509,8 +510,9 @@ def register(app: FastAPI, db: Store):
 
     @app.get("/api/desk/journal")
     def desk_journal():
-        """The coach's daily reviews in plain words (coach/journal.md, pulled from the state dataset online)."""
-        return {"entries": coach.read_journal()}
+        """The coach's daily reports (coach/reports.json, newest first) and its journal (coach/journal.md) for days
+        without a report; both are pulled from the state dataset online."""
+        return {"reports": coach.read_reports()[::-1], "entries": coach.read_journal()}
 
     @app.post("/api/desk/coach/rules/{rule_id}/retire")
     def coach_retire(rule_id: str):

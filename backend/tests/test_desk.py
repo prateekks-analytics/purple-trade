@@ -484,7 +484,67 @@ def test_journal_parse_and_endpoint(client, coach_dir):
     old = entries[1]
     assert old["summary"] is None and old["items"][2] == {"label": "Mistakes", "text": "churn. two cash round trips"}
     c = client(FakeProvider())
-    assert c.get("/api/desk/journal").json() == {"entries": []}  # no journal yet
+    assert c.get("/api/desk/journal").json() == {"reports": [], "entries": []}  # nothing yet
     coach_dir.mkdir(parents=True, exist_ok=True)
     (coach_dir / "journal.md").write_text(JOURNAL, encoding="utf-8")
     assert c.get("/api/desk/journal").json()["entries"] == entries
+
+
+def test_real_costs_split_intraday_and_delivery_and_tax_profits():
+    from purple_api import costs
+    trades = [
+        {"time": "2026-10-21 10:15", "symbol": "TCS", "side": "BUY", "qty": 10, "price": 1000.0, "value": 10000},
+        {"time": "2026-10-22 09:45", "symbol": "TCS", "side": "SELL", "qty": 10, "price": 1100.0, "value": 11000},
+        {"time": "2026-10-22 10:15", "symbol": "INFY", "side": "BUY", "qty": 5, "price": 2000.0, "value": 10000},
+        {"time": "2026-10-22 11:15", "symbol": "INFY", "side": "SELL", "qty": 5, "price": 2020.0, "value": 10100},
+    ]
+    led = costs.ledger(trades)
+    d1, d2 = led["2026-10-21"], led["2026-10-22"]
+    assert d1["charges"]["stt"] == 10.0 and d1["charges"]["stamp"] == 1.5 and d1["tax"] == 0  # a delivery buy
+    assert d2["intraday_value"] == 20100 and d2["delivery_value"] == 11000
+    assert d2["short_term_gain"] == 1000 and d2["intraday_gain"] == 100
+    assert d2["tax"] == 1000 * 0.20 + 100 * 0.30
+    assert d2["charges"]["stt"] == round(11000 * 0.001 + 10100 * 0.00025, 2) and d2["charges"]["dp"] == costs.DP_PER_SELL
+    sm = costs.summary(trades, "2026-10-22")
+    assert sm["day"] == d2 and sm["since_start"]["total"] == round(d1["total"] + d2["total"], 2)
+    assert 0.2 < costs.switch_cost_pct() < 0.25
+
+
+def test_steady_hands_blocks_same_day_round_trips_and_small_reweights():
+    p = panel(60)
+    a, b = desk.UNIVERSE[0], desk.UNIVERSE[1]
+    day2 = next(i for i, t in enumerate(p.times) if t[:10] != p.times[0][:10])
+    targets = {day2: {a: 0.3}, day2 + 2: {}, day2 + 4: {a: 0.3, b: 0.3}, day2 + 6: {a: 0.35, b: 0.3}}
+    free = desk.simulate(p, targets, 500_000, 0)
+    steady = desk.simulate(p, targets, 500_000, 0, steady_from=p.times[0])
+    sides = lambda sim: [(t["symbol"], t["side"]) for t in sim["trades"]]  # noqa: E731
+    assert (desk.short(a), "SELL") in sides(free)  # without the limit: bought and sold the same day
+    assert sides(steady) == [(desk.short(a), "BUY"), (desk.short(b), "BUY")]  # no sell; 0.30 -> 0.35 skipped
+
+
+def test_coach_report_joins_notes_with_numbers_and_reaches_the_manager(coach_dir):
+    pack = {"day": "2026-10-22", "bot": {"id": "b1", "capital": 500000},
+            "summary": {"desk_pct": 0.3, "nifty_pct": -0.54, "twin_pct": 0.03, "company_rupees": 1500, "trades": 29},
+            "costs": {"day": {"total": 1526.0}, "since_start": {"total": 1526.0}},
+            "report_card": [{"id": "news", "name": "News analyst"}, {"id": "momentum", "name": "Momentum"},
+                            {"id": "twin", "name": "Old bot"}]}
+    notes = {"headline": "A small gain on a falling day.", "story": "The bot followed the news analyst most of the day.",
+             "grades": {"news": {"grade": "strong", "trust": "more", "why": "Best result today."},
+                        "momentum": {"grade": "weak", "trust": "less", "why": "Lost and traded a lot."}},
+             "ideas": [{"title": "Trade less", "detail": "Hold longer.", "who": "coach"}]}
+    with pytest.raises(ValueError):
+        coach.make_report(pack, {**notes, "grades": {"news": notes["grades"]["news"]}})  # momentum missing
+    with pytest.raises(ValueError):
+        coach.make_report(pack, {**notes, "grades": {**notes["grades"], "nobody": notes["grades"]["news"]}})
+    rep = coach.make_report(pack, notes)
+    assert rep["numbers"]["company_rupees"] == 1500 and rep["costs"]["day"]["total"] == 1526.0
+    coach.save_report(rep)
+    coach.save_report({**rep, "headline": "Rewritten."})  # same bot and day: replaced, not added
+    assert [r["headline"] for r in coach.read_reports()] == ["Rewritten."]
+    assert coach.latest_report("b1", "2026-10-22 10:15") is None  # a decision only sees earlier days
+    got = coach.latest_report("b1", "2026-10-23 09:15")
+    mkt = desk.features(panel(30).market)
+    prompt = desk.chief_prompt("2026-10-23 09:15", {"news": {}}, {"news": None}, [], 500000, mkt, 5, None, [],
+                               None, got, 0.22)
+    assert "news strong, trust more" in prompt and "momentum weak, trust less" in prompt
+    assert "Rs 220 in taxes and charges" in prompt and "trading cost Rs 1,526" in prompt

@@ -7,7 +7,32 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026; Beat the market added 22 Oct)
 
-**Daily review tab (22 Oct 2026, evening; commit 2893688, NOT pushed yet)**
+**Coach report, real costs, steady hands (22 Oct 2026, ~18:00 IST; NOT pushed yet)**
+- User: the review is the most important part; plain English, judge every bot, whole-system ideas for maximum
+  return, show real taxes/charges SEPARATELY (never cut returns), the bot must learn from the review; coach on Opus.
+- `purple_api/costs.py`: real Indian bill per day for the bot's trades (delivery STT 0.1% both sides, intraday STT
+  0.025% sell, stamp 0.015%/0.003% buy, NSE 0.00297%, SEBI, GST 18% on exchange+SEBI, DP Rs 15.34 per stock sold,
+  brokerage 0) + estimated income tax (20% short-term gains FIFO, 30% slab assumed on same-day profit). Rates from
+  broker/tax pages (UNVERIFIED against official notices). Paper returns still use 3+5 bps.
+- Review pack: `costs` (day + since start) and `report_card` (all 13 analysts' shadow portfolios today/since start,
+  trades, real cost, led/used, plus the old-bot twin). 22 Oct: gain Rs 1,521, real bill Rs 1,526 (charges 1,064 +
+  tax 462; Rs 26.9 lakh of the 31.9 lakh turnover was same-day).
+- Coach report: `coach report --notes <json>` = `make_report` (headline, story, grades per analyst strong/average/
+  weak + trust more/same/less, costs_note, advice_check, rule_changes, ideas coach/owner, watch) joined with code
+  numbers -> `coach/reports.json` (git-ignored; dataset; pulled by hfsync like the journal). `GET /api/desk/journal`
+  returns `{reports, entries}`; Daily review shows the report (numbers, costs box, report card, advice, changes,
+  ideas, watch), journal cards only for days without a report.
+- Manager learns: `chief_prompt(..., report=coach.latest_report(bot, bar), switch_pct)` adds the real switch cost,
+  the last day's bill vs gain and the report card grades; CHIEF_SYSTEM explains costs, grades and steady hands.
+- Steady hands in code (company only, from `desk.STEADY_FROM` 2026-10-23 09:15): no selling a stock bought earlier
+  the same day, no buying back one sold that day, skip reweights under 10 points on kept stocks (crash guard exempt).
+  Twin and backtests unchanged.
+- COACH.md rewritten (plain-English rules, grades, costs, ideas, report step, reports.json "already reviewed"
+  check). Routine trig_01SBtXHPFWDFrRSvKeRKSLL8 now model claude-opus-5-5 with a new prompt; the API dropped the
+  `effort` field, so extra-high effort is NOT set (check the routine page). A sample 22 Oct report (written by this
+  session) is in the session scratchpad only, not uploaded.
+
+**Daily review tab (22 Oct 2026, evening; commit 2893688, pushed 17:36 as 4eecbfd)**
 - New HF token `purple-coach-cloud` (fine-grained, read+write on the state dataset only) in the cloud env; test run
   of the routine passed (whoami Prat8118, dataset downloaded, skipped because the laptop had reviewed 22 Oct).
 - Nav item Daily review `#/review` (`components/Review.tsx`): one card per journal entry, newest first: Summary (else

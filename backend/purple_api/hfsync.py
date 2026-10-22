@@ -4,7 +4,7 @@ When HF_TOKEN is set and a state repo is known (PURPLE_STATE_REPO, else <SPACE_A
 server restores the SQLite database and the coach playbook from that private dataset at startup, backs the database
 up when it changed (at most every 10 minutes, and on shutdown) and syncs the playbook both ways: Claude uploads a new
 playbook from the laptop after /coach-bot; a rule removed in the app is uploaded from here. The coach journal is only
-pulled (the app shows it in Daily review). Off everywhere else.
+pulled, like the coach's reports (the app shows them in Daily review). Off everywhere else.
 """
 from __future__ import annotations
 
@@ -15,7 +15,8 @@ import tempfile
 import time
 from pathlib import Path
 
-DB_FILE, PLAYBOOK_FILE, JOURNAL_FILE = "purple.sqlite3", "playbook.md", "coach/journal.md"
+DB_FILE, PLAYBOOK_FILE = "purple.sqlite3", "playbook.md"
+PULL_ONLY = ("coach/journal.md", "coach/reports.json")  # the coach writes these to the hub; the app only shows them
 EVERY = 600  # seconds between backups / playbook checks
 
 
@@ -134,14 +135,17 @@ class Sync:
         return "same"
 
     def pull_journal(self) -> bool:
-        """The coach writes the journal straight to the hub; this copy is read-only, so the hub always wins."""
-        remote = self.hub.download(JOURNAL_FILE)
-        path = self.coach_dir / "journal.md"
-        if remote is None or (path.exists() and path.read_bytes() == remote):
-            return False
-        self.coach_dir.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(remote)
-        return True
+        """The coach writes its journal and reports straight to the hub; these copies are read-only (hub wins)."""
+        changed = False
+        for name in PULL_ONLY:
+            remote = self.hub.download(name)
+            path = self.coach_dir / name.split("/", 1)[1]
+            if remote is None or (path.exists() and path.read_bytes() == remote):
+                continue
+            self.coach_dir.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(remote)
+            changed = True
+        return changed
 
     def tick(self, force: bool = False) -> None:
         if not self.restored:

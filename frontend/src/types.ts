@@ -326,6 +326,27 @@ export interface CoachRule {
 export interface DeskCoach { rules: CoachRule[] }
 export interface JournalItem { label: string; text: string }
 export interface JournalEntry { date: string; day: string; summary: string | null; items: JournalItem[] }
+export interface DayCosts {
+  charges: { stt: number; stamp: number; exchange: number; sebi: number; gst: number; dp: number; brokerage: number }
+  charges_total: number; turnover: number; intraday_value: number; delivery_value: number
+  short_term_gain: number; intraday_gain: number; tax: number; total: number
+}
+export interface ReportCard {
+  id: string; name: string; team: string; today_pct: number | null; since_start_pct: number | null
+  trades_today: number; costs_today: number; led_today: number; used_today: number
+  grade: 'strong' | 'average' | 'weak' | null; trust: 'more' | 'same' | 'less' | null; why: string
+}
+export interface CoachReport {
+  day: string; bot_id: string; capital: number; headline: string; story: string
+  numbers: { desk_pct: number | null; nifty_pct: number | null; twin_pct: number | null; company_rupees: number | null
+    company_since_start_pct: number | null; nifty_since_start_pct: number | null; trades: number; decisions: number; by_ai: number; day_complete: boolean }
+  costs: { day: DayCosts | null; since_start: { total: number } | null; switch_pct: number; note: string }
+  cards: ReportCard[]
+  advice_check: { rule: string; followed: string; helped: 'yes' | 'no' | 'too early'; note: string }[]
+  rule_changes: string[]
+  ideas: { title: string; detail: string; who: 'coach' | 'owner'; expected: string }[]
+  watch: string
+}
 export interface DeskBot { id: string; name: string; capital: number; days: number; start_time: string; status: 'running' | 'stopped' | 'finished'; created_at: string }
 export interface DeskView {
   bot: DeskBot | null

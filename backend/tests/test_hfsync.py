@@ -124,3 +124,11 @@ def test_journal_is_pulled_only(tmp_path):
     assert s.pull_journal() is True and (coach / "journal.md").read_bytes() == hub.files["coach/journal.md"]
     s.tick(force=True)
     assert "coach/journal.md" not in hub.uploads  # never uploaded from the server
+
+
+def test_reports_are_pulled_too(tmp_path):
+    coach = tmp_path / "coach"
+    hub = FakeHub({"coach/reports.json": b"[]"})
+    s = hfsync.Sync(hub, tmp_path / "x.sqlite3", coach)
+    s.restore()
+    assert (coach / "reports.json").read_bytes() == b"[]"

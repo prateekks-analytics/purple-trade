@@ -8,6 +8,7 @@ decisions that followed a rule with decisions that saw it and did not.
 
 CLI (no server needed, reads the same database):
     python -m purple_api.coach review [--day YYYY-MM-DD]   writes coach/reviews/<day>.md and .json
+    python -m purple_api.coach report --notes notes.json   adds the day's report (notes + numbers) to reports.json
     python -m purple_api.coach check                        validates playbook.md and lists the active rules
     python -m purple_api.coach compare [--days 40 20 10]    one winner vs team mixes, replayed without AI
 """
@@ -21,7 +22,7 @@ from collections import Counter
 from datetime import date
 from pathlib import Path
 
-from . import desk
+from . import costs, desk
 
 HORIZONS = (1, 3, desk.BARS_PER_DAY)  # bars after the decision: 30 minutes, 1.5 hours, one trading day
 MAX_ACTIVE = 10
@@ -132,6 +133,78 @@ def read_journal() -> list[dict]:
         return []
 
 
+# ---------- the daily report (the coach's verdict + facts from code; shown in Daily review, read by the manager) ----------
+
+GRADES, TRUST, WHO = ("strong", "average", "weak"), ("more", "same", "less"), ("coach", "owner")
+
+
+def _txt(x, n: int) -> str:
+    return " ".join(str(x or "").split())[:n]
+
+
+def make_report(pack: dict, notes: dict) -> dict:
+    """Join the coach's notes (plain words, grades, ideas) with the numbers the code computed, so the report never
+    restates a number by hand. Raises ValueError on notes the app cannot show."""
+    if not pack.get("summary"):
+        raise ValueError("no decisions on that day")
+    ids = {r["id"] for r in pack.get("report_card", [])}
+    grades = notes.get("grades") or {}
+    if not isinstance(grades, dict) or not grades:
+        raise ValueError("grades: give every analyst a grade")
+    cards = []
+    for r in pack["report_card"]:
+        g = grades.get(r["id"]) or {}
+        if r["id"] != "twin" and (g.get("grade") not in GRADES or g.get("trust") not in TRUST):
+            raise ValueError(f"grades.{r['id']}: grade must be one of {GRADES} and trust one of {TRUST}")
+        cards.append({**r, "grade": g.get("grade"), "trust": g.get("trust"), "why": _txt(g.get("why"), 220)})
+    unknown = set(grades) - ids
+    if unknown:
+        raise ValueError(f"grades: unknown analyst ids {sorted(unknown)}")
+    ideas = [{"title": _txt(i.get("title"), 90), "detail": _txt(i.get("detail"), 400),
+              "who": i.get("who") if i.get("who") in WHO else "owner", "expected": _txt(i.get("expected"), 160)}
+             for i in (notes.get("ideas") or []) if isinstance(i, dict) and i.get("title")][:4]
+    advice = [{"rule": _txt(a.get("rule"), 8), "followed": _txt(a.get("followed"), 160),
+               "helped": a.get("helped") if a.get("helped") in ("yes", "no", "too early") else "too early",
+               "note": _txt(a.get("note"), 240)} for a in (notes.get("advice_check") or []) if isinstance(a, dict)]
+    if not _txt(notes.get("headline"), 10) or not _txt(notes.get("story"), 10):
+        raise ValueError("headline and story are required")
+    sm, cs = pack["summary"], pack.get("costs") or {}
+    return {"day": pack["day"], "bot_id": pack["bot"]["id"], "capital": pack["bot"]["capital"],
+            "headline": _txt(notes["headline"], 220), "story": _txt(notes["story"], 1400),
+            "numbers": {k: sm.get(k) for k in ("desk_pct", "nifty_pct", "twin_pct", "company_rupees",
+                                               "company_since_start_pct", "nifty_since_start_pct", "trades",
+                                               "decisions", "by_ai", "day_complete")},
+            "costs": {"day": cs.get("day"), "since_start": cs.get("since_start"), "switch_pct": costs.switch_cost_pct(),
+                      "note": _txt(notes.get("costs_note"), 400)},
+            "cards": cards, "advice_check": advice,
+            "rule_changes": [_txt(x, 300) for x in (notes.get("rule_changes") or []) if _txt(x, 1)][:6],
+            "ideas": ideas, "watch": _txt(notes.get("watch"), 300)}
+
+
+def read_reports() -> list[dict]:
+    try:
+        data = json.loads((coach_dir() / "reports.json").read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def save_report(rep: dict) -> Path:
+    """reports.json keeps one report per bot and day, oldest first."""
+    reps = [r for r in read_reports() if (r.get("bot_id"), r.get("day")) != (rep["bot_id"], rep["day"])] + [rep]
+    reps.sort(key=lambda r: (r.get("day") or "", r.get("bot_id") or ""))
+    path = coach_dir() / "reports.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(reps, indent=1, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def latest_report(bot_id: str, before: str | None = None) -> dict | None:
+    """The newest report of this bot for a day before `before` (a bar time), so a decision only sees past reviews."""
+    reps = [r for r in read_reports() if r.get("bot_id") == bot_id and (before is None or r.get("day", "") < before[:10])]
+    return reps[-1] if reps else None
+
+
 def check(rules: list[dict], text: str) -> list[str]:
     """Problems with a playbook: unparsed rule headings, duplicate ids, too many live rules, missing why."""
     errs = []
@@ -176,7 +249,7 @@ def run_book(db, bot: dict, p: desk.Panel) -> tuple[dict, int, dict]:
         i = idx.get(ev["bar"], len(p) if p.times and ev["bar"] > p.times[-1] else None)
         if i is not None:
             exits.setdefault(i, []).extend((s, px, "crash guard") for s, px in ev["prices"].items())
-    return desk.simulate(p, targets, bot["capital"], start, notes, exits), start, ds
+    return desk.simulate(p, targets, bot["capital"], start, notes, exits, steady_from=desk.STEADY_FROM), start, ds
 
 
 def guard_events(db, bot: dict, day: str | None = None) -> list[dict]:
@@ -230,7 +303,7 @@ def twin(db, bot: dict, p: desk.Panel) -> dict | None:
         cur = desk.judge(sh, s0, t, cur)
         targets[t] = sh["agents"][cur]["proposals"][t]
     sim = desk.simulate(b, targets, bot["capital"], start)
-    out = {"equity": sim["equity"], "value": sim["equity"][-1]["value"],
+    out = {"equity": sim["equity"], "value": sim["equity"][-1]["value"], "trades": sim["trades"],
            "return_pct": round((sim["equity"][-1]["value"] / bot["capital"] - 1) * 100, 2)}
     _TWIN.clear()
     _TWIN[key] = out
@@ -317,7 +390,7 @@ def build_review(db, bot: dict, day: str | None = None, p: desk.Panel | None = N
     i0, i1 = idx[todays[0]], idx[todays[-1]]
     last_bar = max(i for i, t in enumerate(p.times) if t.startswith(day))
     first_bar = min(i for i, t in enumerate(p.times) if t.startswith(day))
-    s0 = max(0, i0 - desk.RECORD_BARS - 3 * desk.BARS_PER_DAY)
+    s0 = min(start, max(0, i0 - desk.RECORD_BARS - 3 * desk.BARS_PER_DAY))  # from the bot's start: since-start cards
     ms = db.get_decisions(f"deskmood:{bot['id']}")
     sh = desk.shadows(p, bot["capital"], mood_index(p, ms), start=s0, ctx=context(db, bot, p))
     mkt = sh["market"]
@@ -336,7 +409,11 @@ def build_review(db, bot: dict, day: str | None = None, p: desk.Panel | None = N
         "sold": sum(tr["value"] for tr in trades if tr["side"] == "SELL"),
         "day_complete": p.times[last_bar][11:] >= "15:15",  # Yahoo sometimes adds a 15:30 stub bar
         "twin_pct": _twin_day(db, bot, p, start, base, last_bar),
+        "company_rupees": round(d1 - d0), "company_since_start_pct": _ret(eq[0]["value"], d1),
+        "nifty_since_start_pct": _ret(p.market[start].close, m1),
     }
+    pack["costs"] = costs.summary(book["trades"], day)
+    pack["report_card"] = report_card(db, bot, p, sh, s0, start, base, last_bar, day, [ds[t] for t in todays])
     for ts in todays:
         t, d = idx[ts], ds[ts]
         mood_t = max((k for k in ms if k <= ts), default=None)
@@ -358,6 +435,40 @@ def build_review(db, bot: dict, day: str | None = None, p: desk.Panel | None = N
         pack["decisions"].append({"time": ts, "knew": knew, "chose": chose,
                                   "outcome": outcomes(p, book, start, t, sh, s0)})
     return pack
+
+
+def report_card(db, bot, p, sh, s0, start, base_i, last_bar, day, todays: list[dict]) -> list[dict]:
+    """Every analyst's own paper portfolio (same money, same simple fees) today and since the bot's start, how often
+    it led or was used today, and what its trading today would cost in real taxes and charges. Plus the old-bot twin."""
+    names = {a["id"]: a for a in desk.AGENTS}
+    rows = []
+    for a in desk.AGENT_IDS:
+        sim = sh["agents"][a]["sim"]
+        eq = sim["equity"]
+
+        def v(i):
+            j = i - s0
+            return eq[j]["value"] if 0 <= j < len(eq) else None
+        led = costs.ledger(sim["trades"]).get(day) or {}
+        rows.append({"id": a, "name": names[a]["name"], "team": names[a]["team"],
+                     "today_pct": _ret(v(base_i), v(last_bar)), "since_start_pct": _ret(v(start), v(last_bar)),
+                     "trades_today": sum(1 for t in sim["trades"] if t["time"].startswith(day)),
+                     "costs_today": led.get("total", 0.0),
+                     "led_today": sum(1 for d in todays if d.get("winner") == a),
+                     "used_today": sum(1 for d in todays if a in (d.get("uses") or [d.get("winner")]))})
+    tw = twin(db, bot, p)
+    if tw:
+        eq = tw["equity"]
+
+        def tv(i):
+            j = i - start
+            return eq[j]["value"] if 0 <= j < len(eq) else None
+        led = costs.ledger(tw["trades"]).get(day) or {}
+        rows.append({"id": "twin", "name": "Old bot (original five, no AI)", "team": "For comparison",
+                     "today_pct": _ret(tv(base_i), tv(last_bar)), "since_start_pct": _ret(tv(start), tv(last_bar)),
+                     "trades_today": sum(1 for t in tw["trades"] if t["time"].startswith(day)),
+                     "costs_today": led.get("total", 0.0), "led_today": 0, "used_today": 0})
+    return rows
 
 
 def _twin_day(db, bot, p, start, base_i, last_bar):
@@ -386,6 +497,30 @@ def review_markdown(pack: dict) -> str:
           f"- {s['decisions']} decisions ({s['by_ai']} by AI). Winners: "
           + ", ".join(f"{a} {n}" for a, n in s["winners"].items()) + ".",
           f"- {s['trades']} trades: bought Rs {s['bought']:,.0f}, sold Rs {s['sold']:,.0f}.", ""]
+    cs = pack.get("costs") or {}
+    if cs.get("day"):
+        c, ss = cs["day"], cs["since_start"]
+        L += ["## Real-world costs (not taken from the returns above)", "",
+              f"- Today: bought and sold Rs {c['turnover']:,.0f} in total (Rs {c['intraday_value']:,.0f} of it bought "
+              f"and sold the same day). Taxes and charges Rs {c['charges_total']:,.0f} (securities transaction tax "
+              f"Rs {c['charges']['stt']:,.0f}, stamp duty Rs {c['charges']['stamp']:,.0f}, exchange, SEBI, GST and "
+              f"depository Rs {c['charges']['exchange'] + c['charges']['sebi'] + c['charges']['gst'] + c['charges']['dp']:,.0f}).",
+              f"- Income tax on today's booked profit (estimate): Rs {c['tax']:,.0f} (short-term gain Rs "
+              f"{c['short_term_gain']:,.0f} at 20%, same-day profit Rs {c['intraday_gain']:,.0f} at 30%).",
+              f"- Total real cost today Rs {c['total']:,.0f}; since the start Rs {ss['total']:,.0f} over {cs['days']} day(s).",
+              f"- A switch from one stock to another costs about {costs.switch_cost_pct():.2f}% in taxes and charges "
+              "alone, before price slippage.", ""]
+    rc = pack.get("report_card") or []
+    if rc:
+        L += ["## Report card (each analyst's own paper portfolio on the same money)", "",
+              "| analyst | team | today | since start | trades today | real cost today | led / used today |",
+              "|---|---|---|---|---|---|---|"]
+        for r in rc:
+            L.append(f"| {r['name']} | {r['team']} | {_f(r['today_pct'])} | {_f(r['since_start_pct'])} | "
+                     f"{r['trades_today']} | Rs {r['costs_today']:,.0f} | {r['led_today']} / {r['used_today']} |")
+        L += [f"| The company (what the bot did) | | {_f(s['desk_pct'])} | {_f(s.get('company_since_start_pct'))} | "
+              f"{s['trades']} | Rs {(cs.get('day') or {}).get('total', 0):,.0f} | |",
+              f"| NIFTY 50 | | {_f(s['nifty_pct'])} | {_f(s.get('nifty_since_start_pct'))} | | | |", ""]
     sc = pack.get("scorecard") or {}
     if sc:
         L += ["## Rule scorecard (3-bar edge vs NIFTY, all days of this bot, AI decisions only)", "",
@@ -484,6 +619,10 @@ def main(argv: list[str] | None = None) -> int:
     r = sub.add_parser("review", help="write coach/reviews/<day>.md and .json")
     r.add_argument("--day")
     r.add_argument("--bot")
+    rp = sub.add_parser("report", help="join the coach's notes (JSON file) with the day's numbers into reports.json")
+    rp.add_argument("--notes", required=True)
+    rp.add_argument("--day")
+    rp.add_argument("--bot")
     sub.add_parser("check", help="validate playbook.md")
     c = sub.add_parser("compare", help="replay one winner vs team mixes (no AI)")
     c.add_argument("--days", type=int, nargs="*", default=[40, 20, 10])
@@ -513,6 +652,14 @@ def main(argv: list[str] | None = None) -> int:
         print("No desk bot in the database yet.")
         return 1
     pack = build_review(db, bot, a.day)
+    if a.cmd == "report":
+        try:
+            rep = make_report(pack, json.loads(Path(a.notes).read_text(encoding="utf-8")))
+        except (OSError, ValueError) as e:
+            print("ERROR:", e)
+            return 1
+        print(save_report(rep))
+        return 0
     print(write_review(pack))
     return 0
 
