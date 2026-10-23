@@ -7,6 +7,24 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026; Beat the market added 22 Oct)
 
+**Research 23 Oct 2026: crash guard, warning signs, short selling (all REJECTED; nothing built)**
+- Trigger: on 23 Oct the guard sold at 10:09 (NIFTY 0.7% below its 30-min high after a slow slide) and NIFTY
+  then bounced. User asked for faster triggers, come-back-in, cut-half, a 5-min-watched same-day short, and
+  pre-open warning signs. Scripts and outputs: session scratchpad `crash/` (not in git).
+- 59 days of NIFTY 5-min (30 Jul-23 Oct, 23 Oct partial), NIFTY as the portfolio, real charges + 0.05% slippage:
+  no guard -7.01%; current guard (0.7%/30m) -7.34% (fired 2 days); faster triggers worse (0.5%/15m -7.94%, 3 days;
+  0.3% fires on 25 days); cut-half and come-back-in no better; same-day short: 144 settings traded, 0 beat no
+  guard (best -7.23%, worst -15%). The 8 worst days were slow slides or gap-downs: their biggest 30-min fall was
+  0.26-0.74%, so there was no fast crash to catch.
+- Warning signs, 3 years daily (733 days, 89 "bad" days with open-to-close <= -0.7%): US -1%/-1.5% overnight, India
+  VIX +5/10%, NIFTY -1% yesterday, Japan/HK -1.5%, gap-down 0.5/1%, 2+ signs. They do flag bad days more often
+  (up to 28% vs 12%), but on most of those days NIFTY recovers after the open (average open-to-close positive), so
+  cutting 50% at the open lost 1-23 points over 3 years in every variant, delivery or same-day, in nearly every
+  third. Also: NIFTY's whole 3-year gain came overnight (average open-to-close -0.03%/day).
+- Kept the current guard as insurance against a real fast crash (none in the sample). Small open fix: the AI
+  manager still meets after the guard fires and writes confusing "move cash into ..." reasons (targets are forced
+  to cash); skip the AI while the guard holds cash. Also seen: "AI chief: ValueError: no valid winner".
+
 **Coach report, real costs, steady hands (22 Oct 2026, ~18:00 IST; commit ad92413, pushed 18:06 as bdc0c7d, live)**
 - User: the review is the most important part; plain English, judge every bot, whole-system ideas for maximum
   return, show real taxes/charges SEPARATELY (never cut returns), the bot must learn from the review; coach on Opus.
