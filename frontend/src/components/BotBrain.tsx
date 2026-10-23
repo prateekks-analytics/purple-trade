@@ -2,12 +2,14 @@ import { useState } from 'react'
 import { api } from '../api'
 import type { CoachRule } from '../types'
 import { errText } from './AgentBits'
+import { useReadOnly } from '../lib/auth'
 import { AgentMark, PortfolioChart, dayLabel, decidedAt, pct, signed, useBacktest, useDesk, when } from './DeskBits'
 
 /** Rules Claude wrote after reviewing past days; the chief reads them before every decision. */
 function CoachNotes({ rules, onChange }: { rules: CoachRule[]; onChange: () => void }) {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
+  const readOnly = useReadOnly()
   const remove = async (r: CoachRule) => {
     if (!confirm(`Remove coach rule ${r.id}? The bot stops reading it at its next decision.`)) return
     setBusy(r.id)
@@ -27,7 +29,7 @@ function CoachNotes({ rules, onChange }: { rules: CoachRule[]; onChange: () => v
                 <div className="coach-rule-top">
                   <span className="coach-id">{r.id}</span>
                   <p>{r.text}</p>
-                  <button className="btn sm quiet" onClick={() => remove(r)} disabled={busy !== ''} aria-label={`Remove rule ${r.id}`}>{busy === r.id ? 'Removing…' : 'Remove'}</button>
+                  {!readOnly && <button className="btn sm quiet" onClick={() => remove(r)} disabled={busy !== ''} aria-label={`Remove rule ${r.id}`}>{busy === r.id ? 'Removing…' : 'Remove'}</button>}
                 </div>
                 <p className="sub">Added {dayLabel(r.added)}{r.status === 'trial' ? ' · on trial' : ''} · {r.why}</p>
                 {s && f && (

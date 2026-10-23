@@ -7,6 +7,21 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026; Beat the market added 22 Oct)
 
+**Friends' accounts (23 Oct 2026, evening; NOT pushed yet)**
+- User: owner is primary; up to 10 friends register themselves (open sign-up, first 10), see the owner's bot
+  read-only, use the tools privately with their own free AI key, cannot change core features.
+- `purple_api/accounts.py` (only when PURPLE_PASSWORD is set; laptop and public demo unchanged): sign-in page
+  instead of the browser's Basic prompt; owner = name "owner" + PURPLE_PASSWORD (Basic header still accepted);
+  friends register (PURPLE_MAX_USERS, default 10; scrypt hashes; 30-day HttpOnly session cookies, hashed in DB;
+  20 failed logins per IP per 15 min). Friends get 403 on POST /api/desk*, review save, /api/auth/users;
+  `NoServerAI` instead of the server's AI; the live loop never decides friends' AI paper accounts.
+- Store: tables `users`, `sessions`; `owner` column on strategies and paper_accounts (NULL = owner);
+  `Store._mine()` filters lists/gets by `accounts.scope()` (contextvar set per request; None = no filter).
+- UI: `SignIn.tsx` (sign in / create account, places left), view-only banner, no Start/Stop/Decide or rule Remove
+  for friends, sign-out in the sidebar, owner-only "Friends' accounts" card in More (list, remove). Dashboard launch
+  text now says thirteen analysts. Verified locally on a copy of the live DB (port 8784, test password).
+- After the push the owner signs in once on the new page with name `owner` and the usual password.
+
 **Crash guard follow-ups (23 Oct 2026, afternoon)**
 - LIVE (219b2a3, pushed 13:56): after a market guard sale the bot records each later bar as `by: "rule:guard"`
   with no AI call and no mood read (verified online: 13:45 bar). Review counts only AI-manager decisions as AI;

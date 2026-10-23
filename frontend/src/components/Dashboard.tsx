@@ -5,6 +5,7 @@ import { fmtMoney } from '../lib/tree'
 import { useQuotes } from '../lib/quotes'
 import { nseStatus } from '../lib/portfolio'
 import { errText } from './AgentBits'
+import { useReadOnly } from '../lib/auth'
 import { AgentMark, PortfolioChart, clock, dayLabel, decidedAt, pct, signed, useBacktest, useDesk, when } from './DeskBits'
 
 const AMOUNTS = [100000, 500000, 1000000]
@@ -13,8 +14,10 @@ const SPANS = [{ days: 7, label: '7 days' }, { days: 30, label: '30 days' }, { d
 export function Dashboard() {
   const { view, setView, error } = useDesk()
   const [fresh, setFresh] = useState(false)
+  const readOnly = useReadOnly()
   if (!view) return <div className="page wide"><p className="page-loading">{error || 'Loading your bot…'}</p></div>
-  return view.bot && !fresh
+  if (!view.bot && readOnly) return <div className="page wide"><p className="page-loading">The owner has not started a bot yet.</p></div>
+  return view.bot && (!fresh || readOnly)
     ? <Running view={view} setView={setView} onNew={() => setFresh(true)} />
     : <Launch onStarted={v => { setFresh(false); setView(v) }} />
 }
@@ -34,8 +37,8 @@ function Launch({ onStarted }: { onStarted: (v: DeskView) => void }) {
       <section className="launch glass" aria-labelledby="launch-h">
         <div className="launch-copy">
           <p className="kicker">Purple Desk · AI trading bot</p>
-          <h1 id="launch-h" className="launch-title">Five AI agents. One portfolio. <span className="grad">Beat NIFTY 50.</span></h1>
-          <p className="launch-sub">Every 30 minutes the agents debate, the winner's plan is traded on 10 large NSE stocks with paper money, and the bot learns from the results.</p>
+          <h1 id="launch-h" className="launch-title">Thirteen analysts. One portfolio. <span className="grad">Beat NIFTY 50.</span></h1>
+          <p className="launch-sub">Every 30 minutes thirteen analysts propose portfolios, an AI manager builds one, it is traded on large NSE stocks with paper money, and a daily review teaches the bot.</p>
           <div className="launch-form">
             <label className="amount-field">
               <span>Starting money</span>
@@ -80,6 +83,7 @@ function Running({ view, setView, onNew }: { view: DeskView; setView: (v: DeskVi
   const edge = value - mkt
   const latest = view.decisions?.[0]
   const [busy, setBusy] = useState('')
+  const readOnly = useReadOnly()
   const running = bot.status === 'running'
   const today = useMemo(() => {
     const day = series.length ? series[series.length - 1].time.slice(0, 10) : ''
@@ -118,11 +122,11 @@ function Running({ view, setView, onNew }: { view: DeskView; setView: (v: DeskVi
           {view.core && <p className="sub">{view.core.on ? <>Mode: core momentum, holding the 5 strongest of {view.core.pool} stocks ({view.core.picks.join(', ')})</> : <>Mode: agents trade every 30 minutes{view.core.gap_pct != null ? ` (NIFTY ${Math.abs(view.core.gap_pct).toFixed(1)}% below its 200-day average)` : ''}</>}</p>}
           {view.guard?.length ? <p className="guard-note" role="status">Crash guard, {view.guard[view.guard.length - 1].time}: {view.guard[view.guard.length - 1].reason}</p> : <p className="sub">Crash guard on: checks every minute</p>}
           {running && !view.ai && <p className="warn-note">No AI connected on the server: the bot follows the best track record.</p>}
-          <div className="status-actions">
+          {!readOnly && <div className="status-actions">
             {running && <button className="btn sm quiet" onClick={() => act('decide')} disabled={busy !== ''}>{busy === 'decide' ? 'Deciding…' : 'Decide now'}</button>}
             {running && <button className="btn sm quiet" onClick={() => act('stop')} disabled={busy !== ''}>Stop</button>}
             {!running && <button className="btn sm" onClick={onNew}>Start a new bot</button>}
-          </div>
+          </div>}
         </div>
       </section>
 

@@ -1,4 +1,41 @@
+import { useEffect, useState } from 'react'
+import { api } from '../api'
+import { useMe } from '../lib/auth'
+import { errText } from './AgentBits'
 import { IconBuild, IconFlag, IconOverview, IconPaper, IconSpark, IconTest } from './Icons'
+
+type Friend = { id: string; name: string; created_at: string; strategies: number; paper: number }
+
+/** Owner only: the friends who signed up, with a way to remove an account. */
+function Friends() {
+  const [data, setData] = useState<{ users: Friend[]; max: number } | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => { api.authUsers().then(setData).catch(e => setError(errText(e))) }, [])
+  const remove = async (f: Friend) => {
+    if (!confirm(`Remove ${f.name}'s account? They are signed out and their saved bots are hidden.`)) return
+    try { setData(await api.authRemove(f.id)) } catch (e) { setError(errText(e)) }
+  }
+  return (
+    <section className="panel friends" aria-labelledby="friends-h">
+      <div className="panel-head">
+        <h2 id="friends-h" className="panel-title">Friends' accounts</h2>
+        {data && <span className="sub">{data.users.length} of {data.max} places used</span>}
+      </div>
+      <p className="pad sub">Friends sign up on the sign-in page while places are left. They can watch your bot and read its reviews, and use these tools privately with their own free AI key. They cannot change your bot.</p>
+      {error && <p className="pad error-text" role="alert">{error}</p>}
+      {data && (data.users.length ? (
+        <ul className="friend-list">
+          {data.users.map(f => (
+            <li key={f.id}>
+              <span><b>{f.name}</b><span className="sub">joined {new Date(f.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {f.strategies} bot{f.strategies === 1 ? '' : 's'} · {f.paper} paper account{f.paper === 1 ? '' : 's'}</span></span>
+              <button className="btn sm quiet" onClick={() => remove(f)}>Remove</button>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="pad">No friends have signed up yet.</p>)}
+    </section>
+  )
+}
 
 const TOOLS = [
   { hash: '#/agent', icon: <IconSpark />, title: 'Ask the agent', sub: 'Research one stock: buy, hold or sell with a stop-loss.' },
@@ -10,6 +47,7 @@ const TOOLS = [
 ]
 
 export function More() {
+  const me = useMe()
   return (
     <div className="page more">
       <header>
@@ -25,6 +63,7 @@ export function More() {
           </a>
         ))}
       </div>
+      {me?.accounts && me.role === 'owner' && <Friends />}
     </div>
   )
 }

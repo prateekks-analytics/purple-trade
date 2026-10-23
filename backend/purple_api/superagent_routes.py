@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 import time
 
-from . import ai as ai_mod, challenge, live_agents, market, superagent as sa
+from . import accounts, ai as ai_mod, challenge, live_agents, market, superagent as sa
 from .ai.providers import KEY_ENV, OllamaProvider, ProviderError, make_provider
 from .describe import describe, validate
 from .engine import bars_hash, run_backtest, strategy_hash
@@ -108,7 +108,7 @@ def register(app: FastAPI, db: Store):
                                      request.headers.get("x-ai-model", "").strip())
             except ProviderError as e:
                 raise HTTPException(400, str(e)) from e
-        return app.state.provider
+        return accounts.NoServerAI() if accounts.is_member() else app.state.provider
 
     def ai_or_503(p):
         if not p.status()["available"]:
@@ -399,8 +399,8 @@ def register(app: FastAPI, db: Store):
         if getattr(ai, "name", "") in FREE_BACKGROUND_AI:
             for p in accounts:
                 a = next((x for x in sa.catalog() if x["id"] == p["agent_id"]), None)
-                if not a or a["kind"] not in sa.NEWS_KINDS or p["id"] in busy:
-                    continue
+                if not a or a["kind"] not in sa.NEWS_KINDS or p["id"] in busy or p.get("owner"):
+                    continue  # friends' accounts never use the server's AI
                 bars = account_bars(p)
                 start = next((i for i, b in enumerate(bars) if b.date >= p["start_date"]), None)
                 key = f"paper:{p['id']}"

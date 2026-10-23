@@ -103,8 +103,8 @@ def test_password_gate(monkeypatch):
     monkeypatch.setenv("PURPLE_PASSWORD", "s3cret")
     c = TestClient(create_app(store=Store(":memory:"), provider=FakeProvider()))
     assert c.get("/api/health").status_code == 200  # the keep-awake ping needs no password
-    r = c.get("/api/desk")
-    assert r.status_code == 401 and "Basic" in r.headers["www-authenticate"]
+    assert c.get("/api/desk").status_code == 401  # the app shows its sign-in page
+    assert c.get("/api/auth/me").json()["signed_in"] is False
     bad = base64.b64encode(b"me:wrong").decode()
     assert c.get("/api/desk", headers={"Authorization": f"Basic {bad}"}).status_code == 401
     assert c.get("/api/desk", headers={"Authorization": "Basic !!!"}).status_code == 401

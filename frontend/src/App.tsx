@@ -8,8 +8,10 @@ import { BotBrain } from './components/BotBrain'
 import { Challenge } from './components/Challenge'
 import { Dashboard } from './components/Dashboard'
 import { Review } from './components/Review'
+import { SignIn } from './components/SignIn'
+import { AuthContext, type Me } from './lib/auth'
 import { More } from './components/More'
-import { IconBolt, IconLedger, IconMoon, IconOverview, IconSpark, IconSun, Logo } from './components/Icons'
+import { IconBolt, IconLedger, IconMoon, IconOverview, IconSpark, IconSun, IconUser, Logo } from './components/Icons'
 import { Overview } from './components/Overview'
 import { Palette } from './components/Palette'
 import { useQuotes } from './lib/quotes'
@@ -70,6 +72,20 @@ function initialTheme(): 'light' | 'dark' {
 }
 
 export default function App() {
+  const [me, setMe] = useState<Me | null>(null)
+  useEffect(() => {
+    const load = () => api.authMe().then(setMe).catch(() =>
+      setMe({ accounts: false, signed_in: true, name: null, role: 'owner', seats_left: 0 }))
+    load()
+    window.addEventListener('purple:signin', load)
+    return () => window.removeEventListener('purple:signin', load)
+  }, [])
+  if (!me) return <p className="page-loading">Loading…</p>
+  if (me.accounts && !me.signed_in) return <SignIn me={me} onDone={setMe} />
+  return <AuthContext.Provider value={me}><Shell me={me} onSignOut={() => api.authLogout().then(setMe)} /></AuthContext.Provider>
+}
+
+function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const [route, setRoute] = useState<Route>(parseRoute())
   const [idea, setIdea] = useState<string | undefined>()
   const [imported, setImported] = useState<Proposal | undefined>()
@@ -156,6 +172,11 @@ export default function App() {
             aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
             {theme === 'dark' ? <IconSun /> : <IconMoon />}<span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span>
           </button>
+          {me.accounts && (
+            <button className="side-theme" onClick={onSignOut} title={`Signed in as ${me.name}`}>
+              <IconUser /><span>{me.role === 'owner' ? 'Owner' : me.name} · Sign out</span>
+            </button>
+          )}
           <p className="side-note">Virtual money only. No real orders.</p>
         </div>
       </aside>
@@ -197,6 +218,9 @@ export default function App() {
         </header>
         <Palette open={palette} onClose={() => setPalette(false)} onTheme={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))} onConnectAi={() => setAiOpen(true)} />
         <AiConnect key={aiOpen ? 'open' : 'closed'} open={aiOpen} hosted={Boolean(health?.hosted)} onClose={() => setAiOpen(false)} />
+        {me.role === 'member' && (
+          <p className="hosted-note">You are viewing the owner's bot: you can watch it and read its reviews, but not change it. Your own bots and paper accounts are under More, private to you. For AI features, connect your own free AI key.</p>
+        )}
         {health?.hosted && (
           <p className="hosted-note">Shared online demo: strategies and paper accounts saved here are visible to other visitors and are wiped when the server restarts. For private use, download the Windows app.</p>
         )}

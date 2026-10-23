@@ -1,20 +1,18 @@
 """Purple Trade API."""
 from __future__ import annotations
 
-import base64
 import os
-import secrets
 import threading
 from contextlib import asynccontextmanager
 
 from pathlib import Path, PurePath
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
-from . import agents, ai, coach, desk_routes, hfsync, superagent_routes
+from . import accounts, agents, ai, coach, desk_routes, hfsync, superagent_routes
 from .ai import providers as ai_providers
 from .envfile import load_env
 from .csvdata import CsvError, parse_csv
@@ -78,21 +76,14 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
     app = FastAPI(title="Purple Trade", version="0.1.0", lifespan=lifespan)
 
     password = os.environ.get("PURPLE_PASSWORD", "")
-    if password:  # a private online bot: the browser asks once (any user name, this password); health stays open
-        @app.middleware("http")
-        async def gate(request: Request, call_next):
-            if request.url.path == "/api/health":
-                return await call_next(request)
-            auth = request.headers.get("authorization", "")
-            try:
-                given = base64.b64decode(auth[6:]).decode().partition(":")[2] if auth.startswith("Basic ") else ""
-            except ValueError:
-                given = ""
-            if not secrets.compare_digest(given.encode(), password.encode()):
-                return Response("Password needed", status_code=401, headers={"WWW-Authenticate": 'Basic realm="Purple Desk"'})
-            return await call_next(request)
     db = store or default_store()
     app.state.store = db
+    if password:  # a private online bot: the owner and up to 10 friends sign in (see accounts.py)
+        accounts.install(app, db, password)
+    else:
+        @app.get("/api/auth/me")
+        def auth_open():
+            return {"accounts": False, "signed_in": True, "name": None, "role": "owner", "seats_left": 0}
     app.state.provider = provider or ai.default_provider()
 
     if not any(d["synthetic"] for d in db.list_datasets()):
@@ -120,7 +111,7 @@ def create_app(store: Store | None = None, provider=None) -> FastAPI:
         """The AI the person connected in this browser (sent per request, never stored), else the server default."""
         name = request.headers.get("x-ai-provider", "").strip().lower()
         if not name:
-            return app.state.provider
+            return accounts.NoServerAI() if accounts.is_member() else app.state.provider
         try:
             return ai_providers.make_provider(name, request.headers.get("x-ai-key", "").strip(),
                                               request.headers.get("x-ai-model", "").strip())

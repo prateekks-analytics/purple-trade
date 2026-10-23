@@ -3,6 +3,7 @@ import type {
   StrategyDoc, StrategySummary, SuperAgentInfo, Template,
 } from './types'
 import { aiHeaders } from './lib/aiSettings'
+import type { Me } from './lib/auth'
 
 export class ApiError extends Error {
   status: number
@@ -24,6 +25,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await res.text()
   const body = text ? JSON.parse(text) : null
   if (!res.ok) {
+    if (res.status === 401 && !path.startsWith('/api/auth/')) window.dispatchEvent(new Event('purple:signin'))
     const d = body?.detail
     const details: string[] = Array.isArray(d?.errors) ? d.errors : Array.isArray(d?.shape_errors) ? d.shape_errors : []
     const msg = typeof d === 'string' ? d : details[0] ?? `Request failed (${res.status})`
@@ -96,6 +98,12 @@ export const api = {
   deskStart: (capital: number, days: number) => req<DeskView>('/api/desk', json('POST', { capital, days })),
   deskStop: () => req<DeskView>('/api/desk/stop', json('POST')),
   deskDecide: () => req<DeskView>('/api/desk/decide', json('POST')),
+  authMe: () => req<Me>('/api/auth/me'),
+  authLogin: (name: string, password: string) => req<Me>('/api/auth/login', json('POST', { name, password })),
+  authRegister: (name: string, password: string) => req<Me>('/api/auth/register', json('POST', { name, password })),
+  authLogout: () => req<Me>('/api/auth/logout', json('POST')),
+  authUsers: () => req<{ users: { id: string; name: string; created_at: string; strategies: number; paper: number }[]; max: number }>('/api/auth/users'),
+  authRemove: (id: string) => req<{ users: { id: string; name: string; created_at: string; strategies: number; paper: number }[]; max: number }>(`/api/auth/users/${encodeURIComponent(id)}`, json('DELETE')),
   deskJournal: () => req<{ reports: CoachReport[]; entries: JournalEntry[] }>('/api/desk/journal'),
   coachRetire: (id: string) => req<DeskCoach>(`/api/desk/coach/rules/${encodeURIComponent(id)}/retire`, json('POST')),
   deskBacktest: (days = 40, capital = 500000) => req<DeskBacktest>(`/api/desk/backtest?days=${days}&capital=${capital}`),

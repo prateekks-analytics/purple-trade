@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import accounts
 from .engine import Bar
 
 _SCHEMA = """
@@ -47,6 +48,13 @@ CREATE TABLE IF NOT EXISTS market_bars (
   symbol TEXT NOT NULL, interval TEXT NOT NULL, ts TEXT NOT NULL,
   open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, volume REAL NOT NULL,
   PRIMARY KEY (symbol, interval, ts)
+);
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, name_key TEXT NOT NULL UNIQUE, pw_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS desk_bots (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, capital REAL NOT NULL, days INTEGER NOT NULL DEFAULT 0,
@@ -99,6 +107,25 @@ class Store:
         if "race_days" not in cols:  # added 22 Oct 2026: > 0 marks a beat-the-market race of that many sessions
             self._db.execute("ALTER TABLE paper_accounts ADD COLUMN race_days INTEGER NOT NULL DEFAULT 0")
             self._db.commit()
+        for table in ("paper_accounts", "strategies"):  # added 23 Oct 2026: a friend's account id; NULL = the owner's
+            if "owner" not in {r["name"] for r in self._db.execute(f"PRAGMA table_info({table})")}:
+                self._db.execute(f"ALTER TABLE {table} ADD COLUMN owner TEXT")
+                self._db.commit()
+
+    @staticmethod
+    def _mine(alias: str = "") -> tuple[str, tuple]:
+        """SQL filter for the signed-in person's saved items (see accounts.scope)."""
+        who, col = accounts.scope(), f"{alias}owner"
+        if who is None:
+            return "1=1", ()
+        if who == accounts.OWNER_NAME:
+            return f"{col} IS NULL", ()
+        return f"{col}=?", (who,)
+
+    @staticmethod
+    def _new_owner() -> str | None:
+        who = accounts.scope()
+        return None if who in (None, accounts.OWNER_NAME) else who
 
     def _q(self, sql: str, args=()):
         # Rows are read while the lock is held: the connection is shared across request threads, and a
@@ -112,18 +139,20 @@ class Store:
     # ----- strategies -----
     def create_strategy(self, name: str) -> dict:
         sid, now = _id(), _now()
-        self._q("INSERT INTO strategies(id,name,draft,chat,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                (sid, name, None, "[]", now, now))
+        self._q("INSERT INTO strategies(id,name,draft,chat,created_at,updated_at,owner) VALUES(?,?,?,?,?,?,?)",
+                (sid, name, None, "[]", now, now, self._new_owner()))
         return self.get_strategy(sid)
 
     def list_strategies(self) -> list[dict]:
-        rows = self._q("""SELECT s.id, s.name, s.updated_at,
+        where, args = self._mine("s.")
+        rows = self._q(f"""SELECT s.id, s.name, s.updated_at,
                           (SELECT COUNT(*) FROM versions v WHERE v.strategy_id = s.id) AS versions
-                          FROM strategies s ORDER BY s.updated_at DESC""").fetchall()
+                          FROM strategies s WHERE {where} ORDER BY s.updated_at DESC""", args).fetchall()
         return [dict(r) for r in rows]
 
     def get_strategy(self, sid: str) -> dict | None:
-        r = self._q("SELECT * FROM strategies WHERE id=?", (sid,)).fetchone()
+        where, args = self._mine()
+        r = self._q(f"SELECT * FROM strategies WHERE id=? AND {where}", (sid, *args)).fetchone()
         if not r:
             return None
         versions = self._q("SELECT id, number, hash, created_at FROM versions WHERE strategy_id=? ORDER BY number DESC",
@@ -244,10 +273,10 @@ class Store:
     def add_paper(self, name: str, agent_id: str, dataset_id: str, symbol: str | None, synthetic: bool,
                   start_date: str, capital: float, analyses: list[str] | None = None, interval: str = "1d") -> dict:
         pid = _id()
-        self._q("""INSERT INTO paper_accounts(id,name,agent_id,dataset_id,symbol,synthetic,start_date,sim_days,capital,created_at,analyses,interval)
-                   VALUES(?,?,?,?,?,?,?,0,?,?,?,?)""",
+        self._q("""INSERT INTO paper_accounts(id,name,agent_id,dataset_id,symbol,synthetic,start_date,sim_days,capital,created_at,analyses,interval,owner)
+                   VALUES(?,?,?,?,?,?,?,0,?,?,?,?,?)""",
                 (pid, name, agent_id, dataset_id, symbol, int(synthetic), start_date, capital, _now(),
-                 json.dumps(analyses or []), interval))
+                 json.dumps(analyses or []), interval, self._new_owner()))
         return self.get_paper(pid)
 
     @staticmethod
@@ -257,11 +286,56 @@ class Store:
         return d
 
     def get_paper(self, pid: str) -> dict | None:
-        r = self._q("SELECT * FROM paper_accounts WHERE id=?", (pid,)).fetchone()
+        where, args = self._mine()
+        r = self._q(f"SELECT * FROM paper_accounts WHERE id=? AND {where}", (pid, *args)).fetchone()
         return self._paper(r) if r else None
 
     def list_paper(self) -> list[dict]:
-        return [self._paper(r) for r in self._q("SELECT * FROM paper_accounts ORDER BY created_at DESC").fetchall()]
+        where, args = self._mine()
+        return [self._paper(r) for r in
+                self._q(f"SELECT * FROM paper_accounts WHERE {where} ORDER BY created_at DESC", args).fetchall()]
+
+    # ----- accounts (friends of the owner; see accounts.py) -----
+    def add_user(self, name: str, pw_hash: str) -> dict:
+        uid = _id()
+        self._q("INSERT INTO users(id,name,name_key,pw_hash,created_at) VALUES(?,?,?,?,?)",
+                (uid, name, name.lower(), pw_hash, _now()))
+        return self.get_user(uid)
+
+    def get_user(self, uid: str) -> dict | None:
+        r = self._q("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        return dict(r) if r else None
+
+    def find_user(self, name: str) -> dict | None:
+        r = self._q("SELECT * FROM users WHERE name_key=?", (name.lower(),)).fetchone()
+        return dict(r) if r else None
+
+    def count_users(self) -> int:
+        return self._q("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+
+    def list_users(self) -> list[dict]:
+        return [{"id": r["id"], "name": r["name"], "created_at": r["created_at"],
+                 "strategies": r["s"], "paper": r["p"]} for r in self._q(
+            """SELECT u.id, u.name, u.created_at,
+               (SELECT COUNT(*) FROM strategies s WHERE s.owner = u.id) AS s,
+               (SELECT COUNT(*) FROM paper_accounts p WHERE p.owner = u.id) AS p
+               FROM users u ORDER BY u.created_at""").fetchall()]
+
+    def delete_user(self, uid: str):
+        """Removes the account and signs it out; its saved items stay hidden (nobody else sees them)."""
+        self._q("DELETE FROM sessions WHERE user_id=?", (uid,))
+        self._q("DELETE FROM users WHERE id=?", (uid,))
+
+    def add_session(self, token_hash: str, user_id: str, expires_at: str):
+        self._q("INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)",
+                (token_hash, user_id, expires_at, _now()))
+
+    def get_session(self, token_hash: str) -> dict | None:
+        r = self._q("SELECT * FROM sessions WHERE token_hash=? AND expires_at > ?", (token_hash, _now())).fetchone()
+        return dict(r) if r else None
+
+    def delete_session(self, token_hash: str):
+        self._q("DELETE FROM sessions WHERE token_hash=?", (token_hash,))
 
     def set_race(self, pid: str, days: int):
         self._q("UPDATE paper_accounts SET race_days=? WHERE id=?", (days, pid))
