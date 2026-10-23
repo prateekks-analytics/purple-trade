@@ -242,6 +242,14 @@ def register(app: FastAPI, db: Store):
         key = f"desk:{bot['id']}"
         if p.times[t] in db.get_decisions(key) or finished(bot, p):
             return False
+        sold = guard_cash(bot, p.times[t])
+        if sold:  # the crash guard holds cash for the rest of the day: no AI meeting, no mood read
+            db.save_decision(key, p.times[t], {
+                "time": p.times[t], "winner": "guard", "targets": {}, "debate": [], "confidence": None,
+                "by": "rule:guard", "records": {}, "proposals": {},
+                "reason": f"The crash guard sold everything at {sold['time']} after {desk.MARKET_NAME} fell fast. "
+                          "The bot stays in cash for the rest of the day, so the AI manager does not meet."})
+            return True
         if ai() and (force or time.time() - state["mood_at"].get(bot["id"], 0) > MOOD_EVERY):
             try:
                 read_mood(bot, p, now)
@@ -250,6 +258,10 @@ def register(app: FastAPI, db: Store):
                 state["mood_at"][bot["id"]] = time.time()
         db.save_decision(key, p.times[t], after_guard(bot, p.times[t], decide(bot, p, t)))
         return True
+
+    def guard_cash(bot: dict, bar: str) -> dict | None:
+        """The market-drop guard sale of that day at or before this bar, if any."""
+        return next((e for e in coach.guard_events(db, bot, bar[:10]) if e["bar"] <= bar and e["kind"] == "market"), None)
 
     def after_guard(bot: dict, bar: str, d: dict) -> dict:
         """Later the same day, a guard sale stands: no buying back what it sold (or anything, after a market drop)."""

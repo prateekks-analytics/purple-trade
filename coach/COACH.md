@@ -37,7 +37,8 @@ PY -m purple_api.coach review          # or: review --day YYYY-MM-DD
 
 It prints the path of `coach/reviews/<day>.md` (a `.json` twin sits next to it). Read the Markdown in full, plus
 `coach/playbook.md`, the last three journal entries and the last report in `coach/reports.json`. If the day is not
-finished (the summary says so) or has fewer than 6 AI decisions, say so and stop.
+finished (the summary says so) or has fewer than 6 decisions, say so and stop. A day the crash guard
+moved to cash has few AI decisions (the manager does not meet after it): still review it.
 
 The pack has: the day summary; **real-world costs** (taxes and charges a real trader would pay for the bot's trades:
 securities transaction tax, stamp duty, exchange/SEBI/GST, depository, plus estimated income tax on booked profit;

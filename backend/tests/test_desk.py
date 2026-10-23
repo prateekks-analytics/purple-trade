@@ -1,4 +1,5 @@
 import json
+import time
 from dataclasses import replace
 from datetime import datetime, timedelta
 
@@ -337,6 +338,34 @@ def test_guard_in_the_live_loop(client, monkeypatch):
     assert not book["holdings"]
     c.app.state.desk_tick(now + timedelta(minutes=1))
     assert len(coach.guard_events(db, bot)) == 1  # one market sale per day
+
+
+def test_no_ai_meeting_while_the_guard_holds_cash(client):
+    calls = []
+
+    class Counting(FakeProvider):
+        def complete(self, system, messages):
+            calls.append(system)
+            return super().complete(system, messages)
+    c = client(Counting())
+    c.post("/api/desk", json={"capital": 500000, "days": 0})
+    db = c.app.state.store
+    bot = db.list_desks()[0]
+    p = coach.load_panel(db)
+    bar = p.times[-1]
+    db.save_decision(f"deskguard:{bot['id']}", bar[:10] + " 10:09:00",
+                     {"bar": bar, "day": bar[:10], "kind": "market", "symbols": [], "prices": {},
+                      "reason": "fell", "time": "10:09"})
+    for _ in range(100):  # the launch decides the newest bar in a background thread: let it finish
+        if bar in db.get_decisions(f"desk:{bot['id']}"):
+            break
+        time.sleep(0.05)
+    db._q("DELETE FROM agent_decisions WHERE cache_key=? AND date=?", (f"desk:{bot['id']}", bar))
+    calls.clear()
+    c.post("/api/desk/decide")
+    d = db.get_decisions(f"desk:{bot['id']}")[bar]
+    assert d["by"] == "rule:guard" and d["targets"] == {} and "does not meet" in d["reason"]
+    assert calls == []  # no AI meeting and no mood read
 
 
 def daily_line(n, start=100.0, step=0.5, day0=datetime(2025, 1, 1)):

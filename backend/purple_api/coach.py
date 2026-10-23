@@ -337,13 +337,19 @@ def outcomes(p: desk.Panel, book: dict, start: int, t: int, sh: dict | None = No
     return out
 
 
+def _by_ai(d: dict) -> bool:
+    """Decided by the AI manager (not the track record, the core rule or the crash guard holding cash)."""
+    by = d.get("by") or ""
+    return by != "record" and not by.startswith("rule:")
+
+
 def scorecard(p: desk.Panel, book: dict, start: int, ds: dict, rules: list[dict]) -> dict[str, dict]:
     """Per rule: 3-bar edge vs NIFTY (desk minus NIFTY, %) of AI decisions that cited it vs those that saw it and
     did not. Decisions decided by the track record are left out (the judge does not read rules)."""
     idx = {t: i for i, t in enumerate(p.times)}
     edges = {}
     for ts, d in ds.items():
-        if ts in idx and d.get("by") != "record":
+        if ts in idx and _by_ai(d):
             o = outcomes(p, book, start, idx[ts])["3"]
             if o["desk"] is not None and o["nifty"] is not None:
                 edges[ts] = o["desk"] - o["nifty"]
@@ -403,7 +409,7 @@ def build_review(db, bot: dict, day: str | None = None, p: desk.Panel | None = N
     wins = Counter(ds[t]["winner"] for t in todays)
     pack["summary"] = {
         "desk_pct": _ret(d0, d1), "nifty_pct": _ret(m0, m1), "decisions": len(todays),
-        "by_ai": sum(1 for t in todays if ds[t].get("by") != "record"),
+        "by_ai": sum(1 for t in todays if _by_ai(ds[t])),
         "winners": {names[a]: n for a, n in wins.most_common()}, "trades": len(trades),
         "bought": sum(tr["value"] for tr in trades if tr["side"] == "BUY"),
         "sold": sum(tr["value"] for tr in trades if tr["side"] == "SELL"),
