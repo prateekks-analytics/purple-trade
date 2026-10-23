@@ -49,6 +49,27 @@ function Costs({ r }: { r: CoachReport }) {
   )
 }
 
+/** On crash days: what buying back after a bounce would have made (tracked, not traded), and the running tally. */
+function GuardTest({ r, all }: { r: CoachReport; all: CoachReport[] }) {
+  const g = r.guard_test
+  if (!g) return null
+  const days = all.filter(x => x.guard_test && x.day <= r.day)
+  const total = days.reduce((s, x) => s + (x.guard_test?.extra_rupees ?? 0), 0)
+  const wins = days.filter(x => (x.guard_test?.extra_rupees ?? 0) > 0).length
+  return (
+    <section className="rv-box" aria-label="Crash-day test">
+      <h3>Crash day: would buying back have paid?</h3>
+      <p>The crash guard sold {rupees(g.sold_value)} of shares at {g.sold_at} and the bot stayed in cash.{' '}
+        {g.bought_back_at
+          ? <>Buying the same shares back at {g.bought_back_at}, once the market had bounced {g.rebound_pct.toFixed(1)}% from its low, would have
+            {g.extra_rupees >= 0 ? <> made <b className="pos">{rupees(g.extra_rupees)} more</b></> : <> lost <b className="neg">{rupees(g.extra_rupees)}</b></>} by the close.</>
+          : <>The market never bounced {g.rebound_pct.toFixed(1)}% from its low, so there would have been no buy-back.</>}
+      </p>
+      <p className="sub">Tracked, not traded. Crash days so far: {days.length} of 5 · buy-back better on {wins} · total {signedRupees(total)}. After 5 crash days the coach recommends whether to build it.</p>
+    </section>
+  )
+}
+
 function Card({ c }: { c: ReportCard }) {
   return (
     <tr>
@@ -63,7 +84,7 @@ function Card({ c }: { c: ReportCard }) {
   )
 }
 
-function ReportView({ r, first }: { r: CoachReport; first: boolean }) {
+function ReportView({ r, first, all }: { r: CoachReport; first: boolean; all: CoachReport[] }) {
   const cards = [...r.cards].sort((a, b) => (b.today_pct ?? -99) - (a.today_pct ?? -99))
   return (
     <article className="panel review-card" aria-labelledby={`rv-${r.day}`}>
@@ -75,6 +96,7 @@ function ReportView({ r, first }: { r: CoachReport; first: boolean }) {
       <p className="rv-story">{r.story}</p>
       <Numbers r={r} />
       <Costs r={r} />
+      <GuardTest r={r} all={all} />
       <section className="rv-box" aria-label="Report card">
         <h3>Report card</h3>
         <p className="sub">Each analyst runs its own paper portfolio on the same money. The coach's grade tells the manager whose ideas to lean on tomorrow.</p>
@@ -185,7 +207,7 @@ export function Review() {
       {items.length > 0 && (
         <div className="review-list">
           {items.map((x, i) => x.report
-            ? <ReportView key={`r-${x.day}`} r={x.report} first={i === 0} />
+            ? <ReportView key={`r-${x.day}`} r={x.report} first={i === 0} all={data?.reports ?? []} />
             : <JournalCard key={`j-${x.day}`} e={x.entry as JournalEntry} first={i === 0} />)}
         </div>
       )}

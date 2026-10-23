@@ -22,7 +22,7 @@ from collections import Counter
 from datetime import date
 from pathlib import Path
 
-from . import costs, desk
+from . import costs, desk, market
 
 HORIZONS = (1, 3, desk.BARS_PER_DAY)  # bars after the decision: 30 minutes, 1.5 hours, one trading day
 MAX_ACTIVE = 10
@@ -176,7 +176,7 @@ def make_report(pack: dict, notes: dict) -> dict:
                                                "decisions", "by_ai", "day_complete")},
             "costs": {"day": cs.get("day"), "since_start": cs.get("since_start"), "switch_pct": costs.switch_cost_pct(),
                       "note": _txt(notes.get("costs_note"), 400)},
-            "cards": cards, "advice_check": advice,
+            "guard_test": pack.get("guard_test"), "cards": cards, "advice_check": advice,
             "rule_changes": [_txt(x, 300) for x in (notes.get("rule_changes") or []) if _txt(x, 1)][:6],
             "ideas": ideas, "watch": _txt(notes.get("watch"), 300)}
 
@@ -419,6 +419,7 @@ def build_review(db, bot: dict, day: str | None = None, p: desk.Panel | None = N
         "nifty_since_start_pct": _ret(p.market[start].close, m1),
     }
     pack["costs"] = costs.summary(book["trades"], day)
+    pack["guard_test"] = guard_buyback(db, bot, p, book, day, last_bar)
     pack["report_card"] = report_card(db, bot, p, sh, s0, start, base, last_bar, day, [ds[t] for t in todays])
     for ts in todays:
         t, d = idx[ts], ds[ts]
@@ -477,6 +478,56 @@ def report_card(db, bot, p, sh, s0, start, base_i, last_bar, day, todays: list[d
     return rows
 
 
+BUYBACK_REBOUND = 0.002  # the tested idea: buy back once NIFTY is 0.2% above its low since the guard sold
+
+
+def guard_buyback(db, bot, p, book, day, last_bar, fetch=None) -> dict | None:
+    """On a day the crash guard sold everything: what buying the same shares back would have made, once NIFTY closed
+    a 5-minute bar 0.2% above its lowest 5-minute close since the sale, held to the day's last bar. Rupees versus
+    staying in cash (the bot's actual choice), after slippage and same-day buying charges. Uses Yahoo 5-minute bars
+    (like the guard, which checks every minute); falls back to the 30-minute panel when they cannot be fetched.
+    None on days without a market guard sale."""
+    ev = next((e for e in guard_events(db, bot, day) if e["kind"] == "market"), None)
+    if not ev:
+        return None
+    sold = [tr for tr in book["trades"] if tr["why"] == "crash guard" and tr["side"] == "SELL"
+            and (tr["time"].startswith(day) or tr["time"] == "now")]
+    out = {"sold_at": ev["time"], "rebound_pct": BUYBACK_REBOUND * 100, "sold_value": round(sum(t["value"] for t in sold)),
+           "bought_back_at": None, "extra_rupees": 0.0, "extra_pct": 0.0, "bars": None}
+    if not sold:
+        return out
+    syms = sorted({f"{tr['symbol']}.NS" for tr in sold})
+    try:  # 5-minute closes of the day: {"HH:MM": close} per symbol
+        get = fetch or (lambda s: market.intraday_bars(s, "5m", "5d"))
+        fine = {s: {b.date[11:]: b.close for b in get(s) if b.date.startswith(day)} for s in [desk.MARKET] + syms}
+        if not fine[desk.MARKET] or not all(fine[s] for s in syms):
+            raise ValueError("no 5-minute bars for the day")
+        times, size = sorted(fine[desk.MARKET]), "5m"
+        mk, px = fine[desk.MARKET], {s: fine[s] for s in syms}
+    except Exception:  # noqa: BLE001 - offline or no data: the coarser 30-minute panel
+        times = [t[11:] for t in p.times[:last_bar + 1] if t.startswith(day)]
+        mk = {t[11:]: b.close for t, b in zip(p.times, p.market) if t.startswith(day)}
+        px = {s: {t[11:]: b.close for t, b in zip(p.times, p.bars.get(s, [])) if t.startswith(day)} for s in syms}
+        size = "30m"
+    out["bars"] = size
+    sale = [t for t in times if t <= ev["time"]]
+    after = [t for t in times if t > (sale[-1] if sale else ev["time"])]
+    if not sale or not after:
+        return out
+    low, last = mk[sale[-1]], times[-1]
+    buy_cost = 0.00003 + costs.EXCHANGE * (1 + costs.GST) + 0.0005
+    for t in after:
+        c = mk[t]
+        if c >= low * (1 + BUYBACK_REBOUND) and t < "15:15" and t != last:
+            extra = sum(tr["qty"] * (px[f"{tr['symbol']}.NS"].get(last, 0) - px[f"{tr['symbol']}.NS"].get(t, 0) * (1 + buy_cost))
+                        for tr in sold if px[f"{tr['symbol']}.NS"].get(t) and px[f"{tr['symbol']}.NS"].get(last))
+            out.update(bought_back_at=t, nifty_low=round(low, 1), nifty_back=round(c, 1), extra_rupees=round(extra),
+                       extra_pct=round(extra / bot["capital"] * 100, 3))
+            return out
+        low = min(low, c)
+    return out
+
+
 def _twin_day(db, bot, p, start, base_i, last_bar):
     tw = twin(db, bot, p)
     if not tw:
@@ -516,6 +567,14 @@ def review_markdown(pack: dict) -> str:
               f"- Total real cost today Rs {c['total']:,.0f}; since the start Rs {ss['total']:,.0f} over {cs['days']} day(s).",
               f"- A switch from one stock to another costs about {costs.switch_cost_pct():.2f}% in taxes and charges "
               "alone, before price slippage.", ""]
+    gt = pack.get("guard_test")
+    if gt:
+        L += ["## Crash-day test: buy back after a bounce? (tracked, not traded)", "",
+              f"- The guard sold Rs {gt['sold_value']:,.0f} of shares at {gt['sold_at']} and the bot stayed in cash.",
+              (f"- Buying the same shares back at {gt['bought_back_at']} (NIFTY {gt['nifty_back']:,.1f}, 0.2% above its low "
+               f"{gt['nifty_low']:,.1f}) and holding to the close would have made Rs {gt['extra_rupees']:+,.0f} "
+               f"({gt['extra_pct']:+.2f}% of the capital) compared with staying in cash."
+               if gt["bought_back_at"] else "- NIFTY never bounced 0.2% from its low before the close: no buy-back."), ""]
     rc = pack.get("report_card") or []
     if rc:
         L += ["## Report card (each analyst's own paper portfolio on the same money)", "",

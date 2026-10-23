@@ -321,6 +321,10 @@ def test_guard_in_the_live_loop(client, monkeypatch):
     db = c.app.state.store
     bot = db.list_desks()[0]
     p = coach.load_panel(db)
+    for _ in range(100):  # the launch decides the newest bar in a background thread: let it finish first
+        if p.times[-1] in db.get_decisions(f"desk:{bot['id']}"):
+            break
+        time.sleep(0.05)
     db.save_decision(f"desk:{bot['id']}", p.times[-1], {"winner": "trend", "targets": {"INFY.NS": 0.3}, "reason": "r",
                                                         "by": "record", "debate": [], "records": {}, "proposals": {}})
     last = datetime.strptime(p.times[-1], "%Y-%m-%d %H:%M")
@@ -577,3 +581,26 @@ def test_coach_report_joins_notes_with_numbers_and_reaches_the_manager(coach_dir
                                None, got, 0.22)
     assert "news strong, trust more" in prompt and "momentum weak, trust less" in prompt
     assert "Rs 220 in taxes and charges" in prompt and "trading cost Rs 1,526" in prompt
+
+
+def test_guard_buyback_tracks_what_buying_back_after_a_bounce_would_make(tmp_path):
+    from purple_api.engine import Bar
+    db = Store(tmp_path / "t.sqlite3")
+    bot = {"id": "b1", "capital": 500000}
+    day = "2026-10-23"
+    db.save_decision("deskguard:b1", f"{day} 10:09:00", {"bar": f"{day} 09:45", "day": day, "kind": "market",
+                                                         "symbols": ["INFY.NS"], "prices": {"INFY.NS": 100.0},
+                                                         "reason": "fell", "time": "10:09"})
+    book = {"trades": [{"time": f"{day} 09:45", "symbol": "INFY", "side": "SELL", "qty": 100, "price": 100.0,
+                        "value": 10000, "why": "crash guard"}]}
+    nifty = [("10:05", 1000.0), ("10:10", 995.0), ("10:15", 994.0), ("10:20", 996.5), ("15:25", 1001.0)]
+    infy = [("10:05", 100.0), ("10:10", 99.0), ("10:15", 98.0), ("10:20", 99.0), ("15:25", 101.0)]
+    bars = lambda rows: [Bar(f"{day} {t}", c, c, c, c, 0) for t, c in rows]  # noqa: E731
+    fetch = lambda s: bars(nifty if s == desk.MARKET else infy)  # noqa: E731
+    g = coach.guard_buyback(db, bot, None, book, day, 0, fetch=fetch)
+    assert g["bars"] == "5m" and g["bought_back_at"] == "10:20" and g["nifty_low"] == 994.0  # 996.5 >= 994 * 1.002
+    assert 180 < g["extra_rupees"] < 200  # 100 shares from ~99.05 to 101
+    flat = [("10:05", 1000.0), ("10:10", 995.0), ("15:25", 995.5)]
+    g = coach.guard_buyback(db, bot, None, book, day, 0, fetch=lambda s: bars(flat if s == desk.MARKET else infy))
+    assert g["bought_back_at"] is None and g["extra_rupees"] == 0
+    assert coach.guard_buyback(db, bot, None, book, "2026-10-22", 0, fetch=fetch) is None  # no guard that day

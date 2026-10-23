@@ -341,6 +341,8 @@ export interface CoachReport {
   numbers: { desk_pct: number | null; nifty_pct: number | null; twin_pct: number | null; company_rupees: number | null
     company_since_start_pct: number | null; nifty_since_start_pct: number | null; trades: number; decisions: number; by_ai: number; day_complete: boolean }
   costs: { day: DayCosts | null; since_start: { total: number } | null; switch_pct: number; note: string }
+  guard_test?: { sold_at: string; sold_value: number; bought_back_at: string | null; nifty_low?: number; nifty_back?: number
+    rebound_pct: number; extra_rupees: number; extra_pct: number } | null
   cards: ReportCard[]
   advice_check: { rule: string; followed: string; helped: 'yes' | 'no' | 'too early'; note: string }[]
   rule_changes: string[]

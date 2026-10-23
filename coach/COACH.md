@@ -95,6 +95,14 @@ whichever analyst led the two-day record (replays showed that loses) or combine 
 After 10 trading days, if the company trails the old bot by more than 0.5 points since the start, say plainly that
 the company is not paying off and the bot should go back to the original five (an "owner" idea).
 
+## 3c. Crash days: buy back after a bounce?
+
+On a day the crash guard sold everything, the pack has a "Crash-day test": what buying the same shares back after
+NIFTY bounced 0.2% from its low would have made, compared with staying in cash. It is tracked, not traded. Count the
+crash days in `coach/reports.json` that have a `guard_test`. Once there are 5, add an "owner" idea with the result:
+recommend building the buy-back only if it made money in total and on at least 3 of the 5 days; otherwise recommend
+keeping cash. Until then, mention the running tally in the report story on crash days.
+
 ## 3b. One winner or a team mix?
 
 ```
