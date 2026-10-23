@@ -7,6 +7,16 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
 
 ## Current state (15 Oct 2026; Beat the market added 22 Oct)
 
+**Crash guard follow-ups (23 Oct 2026, afternoon)**
+- LIVE (219b2a3, pushed 13:56): after a market guard sale the bot records each later bar as `by: "rule:guard"`
+  with no AI call and no mood read (verified online: 13:45 bar). Review counts only AI-manager decisions as AI;
+  COACH.md reviews guard days even with few AI decisions.
+- Committed, NOT pushed (5e7cb4a): `coach.guard_buyback` = crash-day test in the review pack/report
+  (`guard_test`): buy the guard-sold shares back once NIFTY closes a 5-min bar 0.2% above its low since the sale
+  (Yahoo 5m, 30m panel fallback), hold to the last bar, rupees vs staying in cash. Daily review shows it with a
+  running tally; COACH.md 3c: after 5 crash days recommend building it only if it won in total and on 3+ days.
+  23 Oct (to ~14:00): bought back 11:10, about +Rs 1,391. 19 Oct (replay) the bounce was fake and it lost.
+
 **Research 23 Oct 2026: crash guard, warning signs, short selling (all REJECTED; nothing built)**
 - Trigger: on 23 Oct the guard sold at 10:09 (NIFTY 0.7% below its 30-min high after a slow slide) and NIFTY
   then bounced. User asked for faster triggers, come-back-in, cut-half, a 5-min-watched same-day short, and
