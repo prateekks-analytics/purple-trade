@@ -520,6 +520,11 @@ def register(app: FastAPI, db: Store):
             pack["saved_to"] = str(coach.write_review(pack))
         return pack
 
+    @app.get("/api/desk/lab")
+    def desk_lab():
+        """Strategy lab: paper-only candidates, their backtest evidence and the board's next step (see lab.py)."""
+        return coach.lab_report(db, panel())
+
     @app.get("/api/desk/journal")
     def desk_journal():
         """The coach's daily reports (coach/reports.json, newest first) and its journal (coach/journal.md) for days

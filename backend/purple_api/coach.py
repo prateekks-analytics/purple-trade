@@ -22,7 +22,7 @@ from collections import Counter
 from datetime import date
 from pathlib import Path
 
-from . import costs, desk, market
+from . import costs, desk, lab, market
 
 HORIZONS = (1, 3, desk.BARS_PER_DAY)  # bars after the decision: 30 minutes, 1.5 hours, one trading day
 MAX_ACTIVE = 10
@@ -389,7 +389,8 @@ def build_review(db, bot: dict, day: str | None = None, p: desk.Panel | None = N
     rules = read_playbook()
     pack = {"bot": {k: bot[k] for k in ("id", "name", "capital", "days", "start_time", "status")}, "day": day,
             "data_time": p.times[-1] if len(p) else None, "decisions": [],
-            "playbook": rules, "scorecard": scorecard(p, book, start, ds, rules)}
+            "playbook": rules, "scorecard": scorecard(p, book, start, ds, rules),
+            "lab": lab_report(db, p, day)}
     if not todays:
         pack["summary"] = None
         return pack
@@ -442,6 +443,13 @@ def build_review(db, bot: dict, day: str | None = None, p: desk.Panel | None = N
         pack["decisions"].append({"time": ts, "knew": knew, "chose": chose,
                                   "outcome": outcomes(p, book, start, t, sh, s0)})
     return pack
+
+
+def lab_report(db, p: desk.Panel, day: str | None = None) -> dict | None:
+    """The strategy lab's paper candidates (see lab.py). None when there are no prices yet."""
+    if not len(p):
+        return None
+    return lab.report(p.market, db.get_market_bars(desk.MARKET, "1d"), day or p.times[-1][:10], capital=500_000)
 
 
 def report_card(db, bot, p, sh, s0, start, base_i, last_bar, day, todays: list[dict]) -> list[dict]:
@@ -586,6 +594,8 @@ def review_markdown(pack: dict) -> str:
         L += [f"| The company (what the bot did) | | {_f(s['desk_pct'])} | {_f(s.get('company_since_start_pct'))} | "
               f"{s['trades']} | Rs {(cs.get('day') or {}).get('total', 0):,.0f} | |",
               f"| NIFTY 50 | | {_f(s['nifty_pct'])} | {_f(s.get('nifty_since_start_pct'))} | | | |", ""]
+    if pack.get("lab"):
+        L += lab.markdown(pack["lab"])
     sc = pack.get("scorecard") or {}
     if sc:
         L += ["## Rule scorecard (3-bar edge vs NIFTY, all days of this bot, AI decisions only)", "",

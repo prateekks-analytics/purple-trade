@@ -1,4 +1,4 @@
-# Purple Trade — new-chat handoff (updated 15 October 2026, evening: live data + news agents)
+# Purple Trade — new-chat handoff (updated 25 October 2026: strategy lab week 1)
 
 **START HERE: section "Current state (15 Oct 2026)" is authoritative. Everything below it is history.**
 
@@ -31,6 +31,25 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
   (Yahoo 5m, 30m panel fallback), hold to the last bar, rupees vs staying in cash. Daily review shows it with a
   running tally; COACH.md 3c: after 5 crash days recommend building it only if it won in total and on 3+ days.
   23 Oct (to ~14:00): bought back 11:10, about +Rs 1,391. 19 Oct (replay) the bounce was fake and it lost.
+
+**Strategy lab, week 1 (25 Oct 2026; committed, NOT pushed; app look unchanged)**
+- Owner's goal: run the bot like a fund that maximises client return for the client's chosen risk, inside the
+  trading mandate (no parking cash in bonds). Add strategies gradually, mostly in the back end; retire proven losers.
+- Agreed rules: long backtests are the main evidence (10 days of live returns are noise; ~400-1,600 days needed to
+  prove an edge); shadow checks behaviour; money moves in steps (shadow -> 10% -> 25% -> full) at 1/3/6-month
+  reviews; demote at once on risk breaches, on returns only at reviews; the owner approves every promotion.
+- `purple_api/lab.py`: STAGES, RISK_LEVELS (low/medium/high; `PURPLE_RISK_LEVEL`, default medium = today's bot:
+  long only, no futures), CANDIDATES with bench evidence, hourly bars from the 30m panel, Supertrend, paper simulate
+  (next-hour open fills, NIFTY futures charges), `assess` (risk flags, trade-count check after 20 days, review dates,
+  live weight days/(days+250), blocked by risk level), `report`, `markdown`. Reproduces the research backtest exactly
+  (+26.65% / +11.89% on Yahoo hourly; hourly-from-30m matches Yahoo 420/420).
+- Shadow since 2026-10-26: `trend_hourly` (Supertrend 10x3 hourly, long/short) and `bear_short` (short only while
+  NIFTY closed below its 200-day average the day before). Both weak evidence (daily versions lost over 2007-2026);
+  both need futures+shorts, so promotion is blocked at the medium risk level.
+- Wiring: review pack `lab` + "Strategy lab" Markdown section, `GET /api/desk/lab`. COACH.md 3d = Friday board report;
+  3a now waits for the 1- and 3-month reviews before recommending a return to the original five. No UI change.
+- Next (weeks 2-3): a small lab card in Daily review; a client risk questionnaire that sets the level; bench the
+  analysts the report card grades weakest before retiring any.
 
 **Research 25 Oct 2026: friend's "Brahmastra" Range Filter + popular strategies (REJECTED; nothing built)**
 - Range Filter (DonovanWall, 100x3), Supertrend 10x3, EMA 9/21, MACD, Donchian 20/10, RSI 30/70, Bollinger, ORB,

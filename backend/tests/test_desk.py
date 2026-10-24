@@ -253,6 +253,9 @@ def test_review_endpoint_and_cli(client, coach_dir, monkeypatch, tmp_path):
     assert c.get("/api/desk/review?day=22-10-2026").status_code == 422
     r = c.get(f"/api/desk/review?day={p.times[110][:10]}&save=true").json()
     assert (coach_dir / "reviews" / f"{p.times[110][:10]}.md").exists() and r["saved_to"]
+    assert r["lab"]["risk_level"]["id"] == "medium" and len(r["lab"]["candidates"]) == 2
+    assert "Strategy lab" in (coach_dir / "reviews" / f"{p.times[110][:10]}.md").read_text(encoding="utf-8")
+    assert c.get("/api/desk/lab").json()["note"].startswith("Paper only")
     file_db = tmp_path / "cli.sqlite3"
     seeded_bot(Store(file_db))
     monkeypatch.setenv("PURPLE_DB", str(file_db))

@@ -92,8 +92,22 @@ Then `PY -m purple_api.coach check` and fix any ERROR line.
 
 The original five-agent desk runs as a silent twin on the same money (report card: "Old bot"). Did the manager chase
 whichever analyst led the two-day record (replays showed that loses) or combine ideas several analysts agreed on?
-After 10 trading days, if the company trails the old bot by more than 0.5 points since the start, say plainly that
-the company is not paying off and the bot should go back to the original five (an "owner" idea).
+Ten days of returns are mostly noise (owner, 25 Oct 2026). Report the gap every day; recommend going back to the
+original five (an "owner" idea) only at the 1-month and 3-month reviews of the company (from the bot's start), and
+only if it still trails the old bot by more than 0.5 points then.
+
+## 3d. Strategy lab and the Friday board report
+
+The pack's `lab` section ("Strategy lab" in the Markdown) tracks candidate strategies on paper (see
+`purple_api/lab.py`): stage, paper result since entering, NIFTY over the same time, worst fall, trades, and a verdict.
+Rules: long backtests are the main evidence; shadow days only check that a strategy behaves like its backtest. A
+verdict starting "Demote now" (a risk breach or odd trading) goes into the report the same day as an "owner" idea.
+Weak returns are judged only when a verdict says "Review due" (1, 3 and 6 months after entry).
+
+On Fridays (or the last trading day of the week) add a board section to the report story: each candidate in one
+plain sentence (where it stands, what it needs), any promotion or retirement to propose as an "owner" idea, and
+whether the risk level blocks it. Never promote or retire anything yourself: the owner approves, then the change is
+made in code. Mention the lab on other days only when something changed (a trade, a flag, a review falling due).
 
 ## 3c. Crash days: buy back after a bounce?
 
