@@ -22,7 +22,7 @@ from collections import Counter
 from datetime import date
 from pathlib import Path
 
-from . import costs, desk, lab, market
+from . import costs, desk, lab, market, preopen
 
 HORIZONS = (1, 3, desk.BARS_PER_DAY)  # bars after the decision: 30 minutes, 1.5 hours, one trading day
 MAX_ACTIVE = 10
@@ -179,7 +179,7 @@ def make_report(pack: dict, notes: dict) -> dict:
                                                "decisions", "by_ai", "day_complete")},
             "costs": {"day": cs.get("day"), "since_start": cs.get("since_start"), "switch_pct": costs.switch_cost_pct(),
                       "note": _txt(notes.get("costs_note"), 400)},
-            "guard_test": pack.get("guard_test"), "cards": cards, "advice_check": advice,
+            "guard_test": pack.get("guard_test"), "preopen_test": pack.get("preopen_test"), "cards": cards, "advice_check": advice,
             "rule_changes": [_txt(x, 300) for x in (notes.get("rule_changes") or []) if _txt(x, 1)][:6],
             "ideas": ideas, "tested": tested, "watch": _txt(notes.get("watch"), 300)}
 
@@ -424,6 +424,8 @@ def build_review(db, bot: dict, day: str | None = None, p: desk.Panel | None = N
     }
     pack["costs"] = costs.summary(book["trades"], day)
     pack["guard_test"] = guard_buyback(db, bot, p, book, day, last_bar)
+    pack["preopen_test"] = preopen.test_day(db.get_decisions(f"deskpreopen:{bot['id']}").get(day), book["trades"],
+                                            p.times, p.bars, p.market, day, bot["capital"])
     pack["report_card"] = report_card(db, bot, p, sh, s0, start, base, last_bar, day, [ds[t] for t in todays])
     for ts in todays:
         t, d = idx[ts], ds[ts]
@@ -597,6 +599,8 @@ def review_markdown(pack: dict) -> str:
         L += [f"| The company (what the bot did) | | {_f(s['desk_pct'])} | {_f(s.get('company_since_start_pct'))} | "
               f"{s['trades']} | Rs {(cs.get('day') or {}).get('total', 0):,.0f} | |",
               f"| NIFTY 50 | | {_f(s['nifty_pct'])} | {_f(s.get('nifty_since_start_pct'))} | | | |", ""]
+    if pack.get("preopen_test"):
+        L += preopen.markdown(pack["preopen_test"])
     if pack.get("lab"):
         L += lab.markdown(pack["lab"])
     sc = pack.get("scorecard") or {}

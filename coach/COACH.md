@@ -136,6 +136,17 @@ crash days in `coach/reports.json` that have a `guard_test`. Once there are 5, a
 recommend building the buy-back only if it made money in total and on at least 3 of the 5 days; otherwise recommend
 keeping cash. Until then, mention the running tally in the report story on crash days.
 
+## 3f. Pre-open warning signs: sell half at the open?
+
+Every day the pack has a "Pre-open test" (`preopen_test`): the cues read between 09:00 and 09:15 (US close, Japan
+and Hong Kong so far, India VIX and NIFTY yesterday), how many were warning signs (2 or more = flagged), and what
+selling half the shares at the 09:15 open and buying back at the close would have made compared with holding. It is
+tracked, not traded: a 3-year test on 23 Oct said it loses because NIFTY usually recovers after a bad open. Keep a
+running tally from `coach/reports.json` (`preopen_test`): flagged days and their total, other days and their total.
+Mention it in the story only on flagged days. Once there are 10 flagged days, add an "owner" idea with the tally:
+propose a shadow candidate only if flagged days made money in total and on at least 6 of the 10, and other days
+lost; otherwise say the 23 Oct result stands.
+
 ## 3b. One winner or a team mix?
 
 ```

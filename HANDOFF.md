@@ -32,6 +32,15 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
   running tally; COACH.md 3c: after 5 crash days recommend building it only if it won in total and on 3+ days.
   23 Oct (to ~14:00): bought back 11:10, about +Rs 1,391. 19 Oct (replay) the bounce was fake and it lost.
 
+**Pre-open read (25 Oct 2026, night; pushed)**
+- Owner wanted a decision before the open on Asian cues. The 23 Oct test said selling at the open loses (NIFTY
+  recovers; its 3-year gain came overnight), so it is tracked, not traded. `purple_api/preopen.py`: live loop reads
+  ^GSPC, ^N225, ^HSI, ^INDIAVIX, ^NSEI (`market.quote`) once between 09:00 and 09:15 IST on weekdays into
+  `deskpreopen:<bot>`; warning-sign thresholds from 23 Oct, 2+ = flagged. GIFT Nifty is not on Yahoo. Review pack
+  `preopen_test` (every day): NIFTY gap, open-to-close, and selling half the company's shares at the day's first
+  open and buying back at the last close vs holding, after intraday charges; kept in reports.json. COACH.md 3f:
+  tally; after 10 flagged days propose shadow only if flagged days won (6+/10) and other days lost.
+
 **Coach's bench (25 Oct 2026, evening; pushed)**
 - Owner: the daily coach should also test strategies after judging the company and the lab. `purple_api/bench.py`
   (stdlib + market): JSON spec from parts (supertrend, ema_cross, macd, donchian, rsi_revert, bollinger_revert,

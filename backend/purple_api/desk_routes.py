@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from . import coach, costs, desk, leaders, market, news
+from . import coach, costs, desk, leaders, market, news, preopen
 from .store import Store
 
 COMPANY = {"RELIANCE.NS": "Reliance Industries", "HDFCBANK.NS": "HDFC Bank", "ICICIBANK.NS": "ICICI Bank",
@@ -361,6 +361,11 @@ def register(app: FastAPI, db: Store):
         if ist.weekday() < 5 and hm >= (8, 30) and state["daily_day"] != ist.date().isoformat() and not state["daily_busy"]:
             state["daily_busy"] = True
             threading.Thread(target=refresh_daily, name="purple-daily", daemon=True).start()
+        if preopen.in_window(ist) and ist.date().isoformat() not in db.get_decisions(f"deskpreopen:{bot['id']}"):
+            try:  # tracked, never traded (see preopen.py)
+                db.save_decision(f"deskpreopen:{bot['id']}", ist.date().isoformat(), preopen.read(now))
+            except Exception as e:  # noqa: BLE001
+                state["last_error"] = f"Pre-open read: {type(e).__name__}: {str(e)[:160]}"
         if ist.weekday() >= 5 or not (in_session or (9, 45) <= hm <= (16, 15)):
             return
         state["busy"] = True
