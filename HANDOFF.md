@@ -32,7 +32,7 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
   running tally; COACH.md 3c: after 5 crash days recommend building it only if it won in total and on 3+ days.
   23 Oct (to ~14:00): bought back 11:10, about +Rs 1,391. 19 Oct (replay) the bounce was fake and it lost.
 
-**Strategy lab, week 1 (25 Oct 2026; committed, NOT pushed; app look unchanged)**
+**Strategy lab, week 1 (25 Oct 2026; commit 3ea8dcb, pushed as 9f7c727 to public main; app look unchanged)**
 - Owner's goal: run the bot like a fund that maximises client return for the client's chosen risk, inside the
   trading mandate (no parking cash in bonds). Add strategies gradually, mostly in the back end; retire proven losers.
 - Agreed rules: long backtests are the main evidence (10 days of live returns are noise; ~400-1,600 days needed to
