@@ -44,7 +44,8 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
   "owner" idea to add to the lab. Report notes take `tested` [{name, verdict, finding}] (`make_report`).
 - First runs (25 Oct): hourly trend WEAK, bear short WEAK, Range Filter day trades FAIL, Donchian FAIL, MACD bull-only
   long WEAK, EMA 9/21 bull-only long STRONG (hourly +12.7%, worst fall -9.4% vs NIFTY +16.3%/-17.0%; daily since
-  2007 +168%, worst fall -17.4% vs +403%/-59.4%). Not added to the lab; the owner decides.
+  2007 +168%, worst fall -17.4% vs +403%/-59.4%). Owner added it to the lab: `ema_bull`, shadow from 2026-10-26,
+  needs futures only; candidates with a `spec` run through `bench.positions` (same code as the bench).
 - Cloud routine reaching Yahoo: UNVERIFIED until its first run.
 
 **Strategy lab, week 1 (25 Oct 2026; commit 3ea8dcb, pushed as 9f7c727 to public main; app look unchanged)**

@@ -50,6 +50,16 @@ CANDIDATES = [
                "trades_per_month": 1.6, "edge_per_year_pct": None,
                "note": "Made money in all 5 settings tried and stayed flat in the bull run (a hedge, not a "
                        "replacement). The daily version lost 40-53% over 2007-2026, so the evidence is weak."}},
+    {"id": "ema_bull", "name": "Bull-market trend (NIFTY futures, long only)", "team": "Index", "stage": "shadow",
+     "since": "2026-10-26", "needs": ["futures"],
+     "spec": {"signal": "ema_cross", "params": {"fast": 9, "slow": 21}, "side": "long", "regime": "bull"},
+     "rule": "Only while NIFTY closed above its 200-day average the day before: long while the hourly 9-hour average "
+             "is above the 21-hour average, otherwise flat.",
+     "bench": {"period": "Nov 2023 - Oct 2026, hourly", "return_pct": 12.7, "nifty_pct": 16.3, "max_drawdown_pct": -9.4,
+               "trades_per_month": 3.5, "edge_per_year_pct": -1.2,
+               "note": "First STRONG bench result (25 Oct, owner added it): less return than NIFTY but about half the "
+                       "worst fall; all nearby settings made money; daily since 2007 +168% with a worst fall of -17.4% "
+                       "vs NIFTY +403% and -59.4%. Holds cash whenever NIFTY is below its 200-day average (as now)."}},
 ]
 
 
@@ -116,6 +126,10 @@ def below_200(daily: list[Bar]) -> dict[str, bool]:
 
 
 def positions(cid: str, hours: list[Bar], daily: list[Bar]) -> list[int]:
+    spec = next((c.get("spec") for c in CANDIDATES if c["id"] == cid), None)
+    if spec:  # a candidate admitted from the coach's bench: same rule, same code
+        from . import bench
+        return bench.positions(spec, hours, daily)
     st = supertrend(hours)
     if cid == "trend_hourly":
         return st

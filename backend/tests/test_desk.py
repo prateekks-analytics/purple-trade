@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from purple_api import coach, desk, desk_routes, market, news
+from purple_api import coach, desk, desk_routes, lab, market, news
 from purple_api.main import create_app
 from purple_api.sample import synthetic_bars
 from purple_api.store import Store
@@ -253,7 +253,7 @@ def test_review_endpoint_and_cli(client, coach_dir, monkeypatch, tmp_path):
     assert c.get("/api/desk/review?day=22-10-2026").status_code == 422
     r = c.get(f"/api/desk/review?day={p.times[110][:10]}&save=true").json()
     assert (coach_dir / "reviews" / f"{p.times[110][:10]}.md").exists() and r["saved_to"]
-    assert r["lab"]["risk_level"]["id"] == "medium" and len(r["lab"]["candidates"]) == 2
+    assert r["lab"]["risk_level"]["id"] == "medium" and len(r["lab"]["candidates"]) == len(lab.CANDIDATES)
     assert "Strategy lab" in (coach_dir / "reviews" / f"{p.times[110][:10]}.md").read_text(encoding="utf-8")
     assert c.get("/api/desk/lab").json()["note"].startswith("Paper only")
     file_db = tmp_path / "cli.sqlite3"

@@ -59,6 +59,16 @@ def test_day_trade_account_is_flat_overnight():
     assert closes and all(t["to"] == 0 for t in closes) and sim["position"] == 0
 
 
+def test_lab_candidate_from_the_bench_uses_the_bench_rule():
+    h = lab.hourly(trend(400, 1.0))
+    c = next(c for c in lab.CANDIDATES if c["id"] == "ema_bull")
+    assert lab.positions("ema_bull", h, []) == bench.positions(c["spec"], h, []) == [0] * len(h)  # no regime: flat
+    days = sorted({b.date[:10] for b in h})
+    past = [(date(2026, 1, 1) + timedelta(days=i)).isoformat() for i in range(200)]
+    rising = [Bar(d, 0, 0, 0, 100 + i, 0) for i, d in enumerate(past + days)]
+    assert 1 in lab.positions("ema_bull", h, rising) and min(lab.positions("ema_bull", h, rising)) == 0
+
+
 def test_save_appends_without_the_nearby_detail(tmp_path, monkeypatch):
     monkeypatch.setenv("PURPLE_COACH_DIR", str(tmp_path))
     res = bench.run({"signal": "ema_cross"}, lab.hourly(trend(600, 1.0)), daily_rising())
