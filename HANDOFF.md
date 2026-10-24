@@ -32,6 +32,21 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
   running tally; COACH.md 3c: after 5 crash days recommend building it only if it won in total and on 3+ days.
   23 Oct (to ~14:00): bought back 11:10, about +Rs 1,391. 19 Oct (replay) the bounce was fake and it lost.
 
+**Coach's bench (25 Oct 2026, evening; pushed)**
+- Owner: the daily coach should also test strategies after judging the company and the lab. `purple_api/bench.py`
+  (stdlib + market): JSON spec from parts (supertrend, ema_cross, macd, donchian, rsi_revert, bollinger_revert,
+  range_filter; side; regime bull/bear by NIFTY vs 200-day average the day before; day_trade). Tests on NIFTY with
+  futures costs: hourly ~2y (Yahoo 60m, `market.INTERVALS` now has 60m) vs buy-and-hold per unit of worst fall,
+  nearby settings x0.7/x1.4 (75% must make money), daily 20y (>= half of buy-and-hold's return per unit of worst
+  fall; skipped for day trades). Verdict strong / weak / fail; `--save` appends to `coach/bench.json` (git-ignored,
+  uploaded to the dataset). `lab.simulate(flat_eod=True)` = day-trading account. ~2 s per idea.
+- COACH.md 3e: one idea a day (three on Fridays), no retests, no tuning; strong (or a useful weak hedge) becomes an
+  "owner" idea to add to the lab. Report notes take `tested` [{name, verdict, finding}] (`make_report`).
+- First runs (25 Oct): hourly trend WEAK, bear short WEAK, Range Filter day trades FAIL, Donchian FAIL, MACD bull-only
+  long WEAK, EMA 9/21 bull-only long STRONG (hourly +12.7%, worst fall -9.4% vs NIFTY +16.3%/-17.0%; daily since
+  2007 +168%, worst fall -17.4% vs +403%/-59.4%). Not added to the lab; the owner decides.
+- Cloud routine reaching Yahoo: UNVERIFIED until its first run.
+
 **Strategy lab, week 1 (25 Oct 2026; commit 3ea8dcb, pushed as 9f7c727 to public main; app look unchanged)**
 - Owner's goal: run the bot like a fund that maximises client return for the client's chosen risk, inside the
   trading mandate (no parking cash in bonds). Add strategies gradually, mostly in the back end; retire proven losers.

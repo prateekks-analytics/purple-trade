@@ -19,11 +19,11 @@ variable or the CLI login; never read, print or save it.
 
 ```
 HF download <dataset> purple.sqlite3 playbook.md --repo-type dataset --local-dir HUB
-HF download <dataset> coach/journal.md coach/reports.json --repo-type dataset --local-dir HUB   (may not exist yet)
+HF download <dataset> coach/journal.md coach/reports.json coach/bench.json --repo-type dataset --local-dir HUB   (may not exist yet)
 ```
 
-Copy `HUB/playbook.md` to `coach/playbook.md` (the online copy is the truth), and `HUB/coach/journal.md` and
-`HUB/coach/reports.json` into `coach/` if they exist. Run every `purple_api.coach` command below from `backend` with
+Copy `HUB/playbook.md` to `coach/playbook.md` (the online copy is the truth), and `HUB/coach/journal.md`,
+`HUB/coach/reports.json` and `HUB/coach/bench.json` into `coach/` if they exist. Run every `purple_api.coach` command below from `backend` with
 `PURPLE_DB=HUB/purple.sqlite3` and `PURPLE_COACH_DIR` pointing at the `coach` folder.
 
 **Already reviewed?** If `coach/reports.json` already has a report for the day you would review (same `day` and
@@ -109,6 +109,25 @@ plain sentence (where it stands, what it needs), any promotion or retirement to 
 whether the risk level blocks it. Never promote or retire anything yourself: the owner approves, then the change is
 made in code. Mention the lab on other days only when something changed (a trade, a flag, a review falling due).
 
+## 3e. Research: test one idea on the bench
+
+After judging the company, the analysts and the lab, pick the one idea most likely to raise the return for the
+risk: a fix for a weakness you saw today, a popular strategy the owner asked about, or a variant of a lab candidate.
+Test it (one idea a day; up to three on Fridays) with the bench, which backtests NIFTY with real futures charges on
+about 2 years of hourly bars, nearby settings and about 20 years of daily bars (see `purple_api/bench.py` for the
+parts you can combine):
+
+```
+PY -m purple_api.bench '{"name": "<plain name>", "signal": "supertrend|ema_cross|macd|donchian|rsi_revert|bollinger_revert|range_filter", "params": {...}, "side": "both|long|short", "regime": "any|bull|bear", "day_trade": false}' --save
+```
+
+Before testing, read `coach/bench.json` and `HANDOFF.md` research notes: never retest the same spec without new
+data, and never tune numbers until something passes (that finds luck, not an edge). The verdict is strong (all three
+tests), weak (hourly and nearby settings only) or fail. Report each test in the notes' `tested` list. A strong
+result, or a weak one that adds something the lab lacks (for example a hedge for falling markets), becomes an
+"owner" idea: "add <name> to the strategy lab as a shadow candidate", with the bench numbers. Never add it yourself.
+Ideas the bench cannot express (stock picking, news, fundamentals) go in as "owner" ideas for a code-built test.
+
 ## 3c. Crash days: buy back after a bounce?
 
 On a day the crash guard sold everything, the pack has a "Crash-day test": what buying the same shares back after
@@ -147,6 +166,8 @@ Write the notes as JSON to a scratch file (not in the repo), then join them with
   "rule_changes": ["<each playbook change as a plain sentence, with the reason>"],
   "ideas": [{"title": "<short>", "detail": "<what to change and why, plain words>", "who": "coach|owner",
              "expected": "<what it should add, honestly hedged>"}],              // one to three, best first
+  "tested": [{"name": "<bench spec name>", "verdict": "strong|weak|fail",
+              "finding": "<one plain sentence with the key numbers>"}],          // today's bench tests (3e)
   "watch": "<what tomorrow's review will check>"
 }
 PY -m purple_api.coach report --notes <scratch file>   # --day YYYY-MM-DD when not the newest day
@@ -179,6 +200,7 @@ HF upload <dataset> coach/playbook.md playbook.md --repo-type dataset --commit-m
 HF upload <dataset> coach/reports.json coach/reports.json --repo-type dataset --commit-message "Coach report <date>"
 HF upload <dataset> coach/journal.md coach/journal.md --repo-type dataset --commit-message "Coach journal <date>"
 HF upload <dataset> coach/reviews coach/reviews --repo-type dataset --commit-message "Coach review <date>"
+HF upload <dataset> coach/bench.json coach/bench.json --repo-type dataset --commit-message "Coach bench <date>"   (if it exists)
 ```
 
 The bot picks up the new playbook and report within 10 minutes (the manager reads the report from the next day's

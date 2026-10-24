@@ -166,6 +166,9 @@ def make_report(pack: dict, notes: dict) -> dict:
     advice = [{"rule": _txt(a.get("rule"), 8), "followed": _txt(a.get("followed"), 160),
                "helped": a.get("helped") if a.get("helped") in ("yes", "no", "too early") else "too early",
                "note": _txt(a.get("note"), 240)} for a in (notes.get("advice_check") or []) if isinstance(a, dict)]
+    tested = [{"name": _txt(t.get("name"), 90), "verdict": t["verdict"], "finding": _txt(t.get("finding"), 300)}
+              for t in (notes.get("tested") or []) if isinstance(t, dict) and t.get("verdict") in ("strong", "weak", "fail")
+              and _txt(t.get("name"), 1)][:3]
     if not _txt(notes.get("headline"), 10) or not _txt(notes.get("story"), 10):
         raise ValueError("headline and story are required")
     sm, cs = pack["summary"], pack.get("costs") or {}
@@ -178,7 +181,7 @@ def make_report(pack: dict, notes: dict) -> dict:
                       "note": _txt(notes.get("costs_note"), 400)},
             "guard_test": pack.get("guard_test"), "cards": cards, "advice_check": advice,
             "rule_changes": [_txt(x, 300) for x in (notes.get("rule_changes") or []) if _txt(x, 1)][:6],
-            "ideas": ideas, "watch": _txt(notes.get("watch"), 300)}
+            "ideas": ideas, "tested": tested, "watch": _txt(notes.get("watch"), 300)}
 
 
 def read_reports() -> list[dict]:

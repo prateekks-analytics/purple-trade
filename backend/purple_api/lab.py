@@ -127,23 +127,34 @@ def positions(cid: str, hours: list[Bar], daily: list[Bar]) -> list[int]:
 
 # ---------- paper results ----------
 
-def simulate(hours: list[Bar], pos: list[int], start: str, capital: float) -> dict:
+def _fee(held: int, want: int) -> float:
+    sell, buy = max(held, 0) + max(-want, 0), max(-held, 0) + max(want, 0)
+    return sell * FUT_SELL + buy * FUT_BUY
+
+
+def simulate(hours: list[Bar], pos: list[int], start: str, capital: float, flat_eod: bool = False) -> dict:
     """Paper account from the first hour at or after `start`: the position decided on an hour's close is taken at the
-    next hour's open (no hindsight). Futures charges and slippage on every change; whole notional, no leverage."""
+    next hour's open (no hindsight). Futures charges and slippage on every change; whole notional, no leverage.
+    flat_eod: a day trader's account, closed at each day's last close and opened again only after the next day's
+    first bar."""
     value, held, peak, dd = capital, 0, capital, 0.0
     equity, trades = [], []
     i0 = next((i for i, h in enumerate(hours) if h.date >= start), len(hours))
     for i in range(i0, len(hours)):
         h = hours[i]
-        want = pos[i - 1] if i > 0 else 0
+        new_day = i == 0 or hours[i - 1].date[:10] != h.date[:10]
+        want = 0 if i == 0 or (flat_eod and new_day) else pos[i - 1]
         if want != held:
-            for side, size in (("SELL", max(held, 0) + max(-want, 0)), ("BUY", max(-held, 0) + max(want, 0))):
-                if size:
-                    value -= value * size * (FUT_SELL if side == "SELL" else FUT_BUY)
+            value -= value * _fee(held, want)
             trades.append({"time": h.date, "from": held, "to": want, "price": round(h.open, 2)})
             held = want
-        nxt = hours[i + 1].open if i + 1 < len(hours) else h.close
+        last_of_day = i + 1 == len(hours) or hours[i + 1].date[:10] != h.date[:10]
+        nxt = h.close if (flat_eod and last_of_day) or i + 1 == len(hours) else hours[i + 1].open
         value *= 1 + held * (nxt / h.open - 1)
+        if flat_eod and last_of_day and held:
+            value -= value * _fee(held, 0)
+            trades.append({"time": h.date[:10] + " close", "from": held, "to": 0, "price": round(h.close, 2)})
+            held = 0
         peak = max(peak, value)
         dd = min(dd, value / peak - 1)
         equity.append({"time": h.date, "value": round(value, 2)})

@@ -24,7 +24,7 @@ SOURCE = "Yahoo Finance (unofficial, delayed; not verified against NSE)"
 CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{}"
 IST = timezone(timedelta(hours=5, minutes=30))
 SETTLED = (16, 0)  # IST time after which today's daily bar is treated as final
-INTERVALS = {"5m": 300, "15m": 900, "30m": 1800}
+INTERVALS = {"5m": 300, "15m": 900, "30m": 1800, "60m": 3600}  # 60m: the coach's bench (about 2 years)
 INTRADAY_RANGE = "1mo"  # enough warm-up for SMA 200 on 5-minute bars; Yahoo keeps 60 days of these
 PAUSE_S = 60
 
