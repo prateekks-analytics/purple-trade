@@ -32,6 +32,17 @@ extend or reuse it. Leave the TCS/Infosys RAG files untouched (they share the CI
   running tally; COACH.md 3c: after 5 crash days recommend building it only if it won in total and on 3+ days.
   23 Oct (to ~14:00): bought back 11:10, about +Rs 1,391. 19 Oct (replay) the bounce was fake and it lost.
 
+**Research 25 Oct 2026: friend's "Brahmastra" Range Filter + popular strategies (REJECTED; nothing built)**
+- Range Filter (DonovanWall, 100x3), Supertrend 10x3, EMA 9/21, MACD, Donchian 20/10, RSI 30/70, Bollinger, ORB,
+  SMA 50/200, Connors RSI2; textbook settings, signal at close, fill next open, real charges + slippage (stocks
+  0.05%, futures 0.01%). Scripts/results: session scratchpad `bt/` (not in git).
+- 5-min intraday (59 days): all lose with costs; Range Filter both sides -17.5% stocks / -5.6% futures (+1.2% gross).
+  Hourly intraday (Nov 2023-Oct 2026): all lose except Bollinger long +2.5%.
+- Daily 2007-2026: buy & hold CAGR 8.8%; every strategy lower (best EMA 9/21 long 5.6%); in bull years B&H averaged
+  +25.9%, best strategy +17%. Trend filters cut 2008 losses but miss rallies. Range Filter long 1.8%, both -4.8%.
+- Only lead: hourly Supertrend swing on NIFTY futures, positive in all 12 nearby settings (+1 to +27%, B&H +16%,
+  smaller drawdowns), but the same rule on daily bars lost; only 3 years of hourly data; needs futures. Not built.
+
 **Research 23 Oct 2026: crash guard, warning signs, short selling (all REJECTED; nothing built)**
 - Trigger: on 23 Oct the guard sold at 10:09 (NIFTY 0.7% below its 30-min high after a slow slide) and NIFTY
   then bounced. User asked for faster triggers, come-back-in, cut-half, a 5-min-watched same-day short, and
